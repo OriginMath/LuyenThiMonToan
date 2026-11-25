@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="light" data-accent="indigo" data-bg="grid">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Origin Math</title>
+  <link id="dynamic-favicon" rel="icon" type="image/svg+xml" href="" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="custom-bg-layer"></div>
+  <div id="bg-marquee-layer" aria-hidden="true"></div>
+  <canvas id="holiday-fx-canvas" aria-hidden="true"></canvas>
+
+  <div class="app-shell">
+    <aside class="sidebar glass" id="sidebar">
+      <div class="brand">
+        <div class="brand-svg-logo" title="Origin Math">
+          <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="omBgGrad" x1="4" y1="2" x2="60" y2="62" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="var(--primary)" />
+                <stop offset="55%" stop-color="var(--primary-hover)" />
+                <stop offset="100%" stop-color="#0ea5e9" />
+              </linearGradient>
+              <linearGradient id="omIntGrad" x1="44" y1="8" x2="20" y2="56" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#ffffff" />
+                <stop offset="65%" stop-color="#e0f2fe" />
+                <stop offset="100%" stop-color="#ffffff" />
+              </linearGradient>
+            </defs>
+            <rect x="2" y="2" width="60" height="60" rx="17" fill="url(#omBgGrad)" />
+            <path d="M44.5 13.8 C42.8 10.6 38.8 9.6 35.6 11.4 C32.3 13.2 31.1 17.5 30.2 24.4 L27.6 42.6 C26.9 47.6 25.9 50.8 23.6 51.8 C22.1 52.5 20.6 51.9 20.1 50.8"
+                  stroke="url(#omIntGrad)" stroke-width="4.9" stroke-linecap="round" fill="none" />
+            <circle cx="44.3" cy="14.2" r="3.4" fill="#ffffff" />
+            <circle cx="19.7" cy="49.8" r="3.4" fill="#ffffff" />
+          </svg>
+        </div>
+        <div class="brand-text">
+          <div class="brand-name">Origin Math</div>
+        </div>
+        <button class="icon-btn collapse-btn" id="sidebar-collapse-btn" onclick="toggleSidebarCollapse()" title="Thu gọn thanh bên">
+          <i class="fa-solid fa-angles-left"></i>
+        </button>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-view="dashboard" onclick="switchView('dashboard')">
+          <i class="fa-solid fa-chart-pie"></i><span class="nav-label">Tổng quan</span>
+        </button>
+        <button class="nav-item" data-view="practice" onclick="switchView('practice')">
+          <i class="fa-solid fa-compass-drafting"></i><span class="nav-label">Luyện đề</span>
+        </button>
+        <button class="nav-item" data-view="exams" onclick="switchView('exams')">
+          <i class="fa-solid fa-shield-halved"></i><span class="nav-label">Khảo thí</span>
+        </button>
+        <button class="nav-item" data-view="history" onclick="switchView('history')">
+          <i class="fa-solid fa-trophy"></i><span class="nav-label">Lịch sử & Xếp hạng</span>
+        </button>
+        <button class="nav-item staff-only" data-view="studio" onclick="switchView('studio')" style="display:none;">
+          <i class="fa-solid fa-chalkboard-user"></i><span class="nav-label">Quản lý & Ra đề</span>
+        </button>
+      </nav>
+    </aside>
+
+    <div class="main-wrap">
+      <div id="holiday-banner" class="holiday-banner" style="display:none;">
+        <div class="holiday-banner-inner">
+          <span id="holiday-banner-icon" class="holiday-icon"></span>
+          <div class="holiday-banner-text">
+            <strong id="holiday-banner-title"></strong>
+            <span id="holiday-banner-sub"></span>
+          </div>
+          <span class="holiday-clock" id="holiday-realtime-clock"></span>
+        </div>
+      </div>
+
+      <header class="topbar glass">
+        <div class="topbar-left">
+          <button class="icon-btn mobile-only" onclick="toggleMobileSidebar()"><i class="fa-solid fa-bars"></i></button>
+          <div class="search-box">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <input type="text" id="global-search" placeholder="Tìm đề, mã phòng..." oninput="handleGlobalSearch(this.value)" />
+          </div>
+        </div>
+        <div class="topbar-right">
+          <button class="icon-btn" id="theme-toggle-btn" onclick="toggleDarkMode()" title="Giao diện Sáng/Tối"><i class="fa-solid fa-moon"></i></button>
+          <button class="icon-btn" onclick="toggleThemeDrawer()" title="Cá nhân hóa"><i class="fa-solid fa-palette"></i></button>
+
+          <div class="user-menu-wrap" id="user-menu-wrap">
+            <button class="btn btn-primary btn-sm user-pill-btn" id="btn-auth-top" onclick="handleTopAuthClick(event)">
+              <i class="fa-solid fa-user"></i> <span>Đăng nhập</span>
+            </button>
+            <div class="user-dropdown glass" id="user-dropdown">
+              <div class="dropdown-header">
+                <img id="dd-avatar" class="dd-avatar" alt="Avatar" />
+                <div>
+                  <div class="dd-name" id="dd-name"></div>
+                  <div class="dd-role" id="dd-role"></div>
+                </div>
+              </div>
+              <button class="dropdown-item" onclick="openProfileView()">
+                <i class="fa-solid fa-id-card"></i> Hồ sơ cá nhân
+              </button>
+              <button class="dropdown-item danger" onclick="handleLogout()">
+                <i class="fa-solid fa-right-from-bracket"></i> Đăng xuất
+              </button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <!-- VIEW 1: TỔNG QUAN -->
+      <main class="view active" id="view-dashboard">
+        <section class="hero-card glass">
+          <div class="hero-content">
+            <span class="chip chip-primary"><i class="fa-solid fa-square-root-variable"></i> ORIGIN MATH</span>
+            <h1>Luyện đề & Khảo thí Toán THPT • Luyện thi môn toán</h1>
+            <div class="quick-join-bar">
+              <input type="text" id="quick-room-code" placeholder="Nhập mã phòng..." onkeydown="if(event.key==='Enter') joinByRoomCode()" />
+              <button class="btn btn-primary" onclick="joinByRoomCode()">
+                <i class="fa-solid fa-door-open"></i> Vào phòng
+              </button>
+            </div>
+          </div>
+          <div class="hero-stats-grid">
+            <div class="stat-box">
+              <div class="stat-icon c-indigo"><i class="fa-solid fa-file-signature"></i></div>
+              <div>
+                <div class="stat-val" id="stat-exams-done">0</div>
+                <div class="stat-lbl">Đã làm</div>
+              </div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-icon c-emerald"><i class="fa-solid fa-bullseye"></i></div>
+              <div>
+                <div class="stat-val" id="stat-avg-score">0.0</div>
+                <div class="stat-lbl">Trung bình</div>
+              </div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-icon c-amber"><i class="fa-solid fa-trophy"></i></div>
+              <div>
+                <div class="stat-val" id="stat-best-score">0.0</div>
+                <div class="stat-lbl">Cao nhất</div>
+              </div>
+            </div>
+            <div class="stat-box">
+              <div class="stat-icon c-sky"><i class="fa-solid fa-layer-group"></i></div>
+              <div>
+                <div class="stat-val" id="stat-total-sets">0</div>
+                <div class="stat-lbl">Bộ đề</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section-header">
+          <h2><i class="fa-solid fa-bolt"></i> Đề thi & Luyện đề</h2>
+        </section>
+        <div class="cards-grid" id="dashboard-exams-list"></div>
+
+        <section class="section-header">
+          <h2><i class="fa-solid fa-layer-group"></i> Chương trình Toán THPT</h2>
+        </section>
+        <div class="grade-grid">
+          <div class="grade-card glass" onclick="openGradeFilter('10')">
+            <div class="grade-badge">Khối 10</div>
+            <h3>Toán 10</h3>
+            <p>Mệnh đề, Hàm số bậc hai, Hệ thức lượng, Vectơ & Tổ hợp.</p>
+          </div>
+          <div class="grade-card glass" onclick="openGradeFilter('11')">
+            <div class="grade-badge">Khối 11</div>
+            <h3>Toán 11</h3>
+            <p>Lượng giác, Dãy số, Giới hạn, Đạo hàm & Quan hệ vuông góc.</p>
+          </div>
+          <div class="grade-card glass" onclick="openGradeFilter('12')">
+            <div class="grade-badge">Khối 12</div>
+            <h3>Toán 12</h3>
+            <p>Khảo sát hàm số, Nguyên hàm - Tích phân, Oxyz & Xác suất.</p>
+          </div>
+          <div class="grade-card glass" onclick="openGradeFilter('THPTQG')">
+            <div class="grade-badge badge-thptqg"><i class="fa-solid fa-graduation-cap"></i> THPTQG</div>
+            <h3>Ôn thi THPTQG</h3>
+            <p>Tổng ôn & luyện đề chuẩn cấu trúc.</p>
+          </div>
+          <div class="grade-card glass" onclick="openGradeFilter('HSG')">
+            <div class="grade-badge badge-hsg"><i class="fa-solid fa-award"></i> Đội tuyển Tỉnh</div>
+            <h3>HSG Toán THPT</h3>
+            <p>Chuyên đề bồi dưỡng học sinh giỏi cấp tỉnh.</p>
+          </div>
+        </div>
+      </main>
+
+      <!-- VIEW 2: LUYỆN ĐỀ -->
+      <main class="view" id="view-practice">
+        <div class="view-head">
+          <h2><i class="fa-solid fa-compass-drafting"></i> Luyện đề</h2>
+          <div class="filter-pills" id="practice-grade-pills">
+            <button class="pill active" data-g="ALL" onclick="renderPracticeCatalog('ALL', this)">Tất cả</button>
+            <button class="pill" data-g="10" onclick="renderPracticeCatalog('10', this)">Khối 10</button>
+            <button class="pill" data-g="11" onclick="renderPracticeCatalog('11', this)">Khối 11</button>
+            <button class="pill" data-g="12" onclick="renderPracticeCatalog('12', this)">Khối 12</button>
+            <button class="pill" data-g="THPTQG" onclick="renderPracticeCatalog('THPTQG', this)">THPTQG</button>
+            <button class="pill" data-g="HSG" onclick="renderPracticeCatalog('HSG', this)">HSG Tỉnh</button>
+          </div>
+        </div>
+        <div class="cards-grid" id="practice-catalog-list"></div>
+      </main>
+
+      <!-- VIEW 3: KHẢO THÍ -->
+      <main class="view" id="view-exams">
+        <div class="view-head">
+          <h2><i class="fa-solid fa-shield-halved"></i> Khảo thí</h2>
+          <div class="filter-pills" id="exam-grade-pills">
+            <button class="pill active" data-g="ALL" onclick="renderExamCatalog('ALL', this)">Tất cả</button>
+            <button class="pill" data-g="10" onclick="renderExamCatalog('10', this)">Khối 10</button>
+            <button class="pill" data-g="11" onclick="renderExamCatalog('11', this)">Khối 11</button>
+            <button class="pill" data-g="12" onclick="renderExamCatalog('12', this)">Khối 12</button>
+            <button class="pill" data-g="THPTQG" onclick="renderExamCatalog('THPTQG', this)">THPTQG</button>
+            <button class="pill" data-g="HSG" onclick="renderExamCatalog('HSG', this)">HSG Tỉnh</button>
+          </div>
+        </div>
+        <div class="cards-grid" id="exam-catalog-list"></div>
+      </main>
+
+      <!-- VIEW 4: LỊCH SỬ & XẾP HẠNG -->
+      <main class="view" id="view-history">
+        <div class="two-col-grid">
+          <section class="panel glass">
+            <h3><i class="fa-solid fa-clock-rotate-left"></i> Lịch sử làm bài</h3>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Đề</th>
+                    <th>Loại</th>
+                    <th>Điểm</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="history-tbody"></tbody>
+              </table>
+            </div>
+          </section>
+          <section class="panel glass">
+            <h3><i class="fa-solid fa-ranking-star"></i> Bảng xếp hạng</h3>
+            <div id="leaderboard-list" class="leaderboard-list"></div>
+          </section>
+        </div>
+      </main>
+
+      <!-- VIEW 5: HỒ SƠ CÁ NHÂN -->
+      <main class="view" id="view-profile">
+        <div class="profile-layout">
+          <section class="panel glass profile-card">
+            <div class="profile-avatar-wrap">
+              <img id="profile-avatar-preview" class="profile-avatar-lg" alt="Avatar" />
+              <button class="btn btn-primary btn-sm" onclick="document.getElementById('profile-avatar-input').click()">
+                <i class="fa-solid fa-camera"></i> Đổi ảnh đại diện
+              </button>
+              <input type="file" id="profile-avatar-input" accept="image/*" hidden onchange="handleAvatarUpload(event)" />
+            </div>
+            <h3 id="profile-display-name" style="margin-top:10px;"></h3>
+            <span class="chip chip-primary" id="profile-role-badge"></span>
+            <div id="profile-permissions-badges" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:10px;"></div>
+          </section>
+
+          <section class="panel glass">
+            <h3><i class="fa-solid fa-user-pen"></i> Cập nhật thông tin cá nhân</h3>
+            <form id="profile-form" onsubmit="saveProfileChanges(event)" style="margin-top:14px;">
+              <div class="form-grid">
+                <div class="field">
+                  <label>Họ và tên</label>
+                  <input type="text" id="prof-name" required />
+                </div>
+                <div class="field">
+                  <label>Tên người dùng</label>
+                  <input type="text" id="prof-username" required oninput="validateUsernameField(this, 'prof-user-hint')" />
+                  <small id="prof-user-hint" class="field-hint"></small>
+                </div>
+                <div class="field" id="prof-grade-field">
+                  <label>Lớp hiện tại</label>
+                  <select id="prof-grade">
+                    <option value="10">Lớp 10</option>
+                    <option value="11">Lớp 11</option>
+                    <option value="12">Lớp 12</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Giới tính</label>
+                  <select id="prof-gender">
+                    <option value="Nam">Nam</option>
+                    <option value="Nữ">Nữ</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Ngày sinh</label>
+                  <input type="date" id="prof-dob" />
+                </div>
+                <div class="field">
+                  <label>Mật khẩu mới</label>
+                  <input type="password" id="prof-newpass" placeholder="••••••••" />
+                </div>
+              </div>
+              <button type="submit" class="btn btn-primary">
+                <i class="fa-solid fa-floppy-disk"></i> Lưu thay đổi
+              </button>
+            </form>
+          </section>
+        </div>
+      </main>
+
+      <!-- VIEW 6: KHU VỰC GIÁO VIÊN & QUẢN TRỊ -->
+      <main class="view" id="view-studio">
+        <div class="view-head">
+          <h2><i class="fa-solid fa-chalkboard-user"></i> Quản lý & Ra đề</h2>
+          <div class="filter-pills">
+            <button class="pill active" onclick="switchStudioTab('create', this)"><i class="fa-solid fa-file-circle-plus"></i> Tạo đề</button>
+            <button class="pill" onclick="switchStudioTab('manage', this)"><i class="fa-solid fa-folder-tree"></i> Quản lý đề</button>
+            <button class="pill" onclick="switchStudioTab('accounts', this)"><i class="fa-solid fa-users"></i> Tài khoản & Lớp</button>
+            <button class="pill" onclick="switchStudioTab('monitor', this)"><i class="fa-solid fa-eye"></i> Giám sát</button>
+          </div>
+        </div>
+
+        <!-- TAB 1: TẠO ĐỀ -->
+        <div class="studio-tab active" id="studio-tab-create">
+          <div class="panel glass">
+            <div class="word-header">
+              <h3>Thiết lập đề thi / Luyện đề</h3>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="downloadColorWordTemplate(false)">
+                <i class="fa-solid fa-download"></i> Mẫu Word (.docx)
+              </button>
+            </div>
+
+            <div class="form-grid">
+              <div class="field">
+                <label>Tên đề</label>
+                <input type="text" id="st-title" placeholder="Nhập tên đề..." />
+              </div>
+              <div class="field">
+                <label>Mã phòng</label>
+                <input type="text" id="st-code" placeholder="VD: KTGK12" />
+              </div>
+              <div class="field">
+                <label>Loại hình</label>
+                <select id="st-mode">
+                  <option value="practice">Luyện đề</option>
+                  <option value="exam">Khảo thí</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Khối / Chương trình</label>
+                <select id="st-grade">
+                  <option value="10">Khối 10</option>
+                  <option value="11">Khối 11</option>
+                  <option value="12" selected>Khối 12</option>
+                  <option value="THPTQG">Ôn THPTQG</option>
+                  <option value="HSG">Ôn HSG Tỉnh</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Thời gian (phút)</label>
+                <input type="number" id="st-duration" value="90" min="5" max="240" />
+              </div>
+              <div class="field">
+                <label>Giới hạn vi phạm (Khảo thí)</label>
+                <input type="number" id="st-maxviol" value="3" min="1" max="10" />
+              </div>
+              <div class="field">
+                <label>Quyền truy cập</label>
+                <select id="st-access-mode" onchange="toggleStudioWhitelistBox()">
+                  <option value="grade">Theo Khối / Quyền đã duyệt</option>
+                  <option value="whitelist">Chỉ học sinh được chọn</option>
+                </select>
+              </div>
+            </div>
+
+            <div id="st-whitelist-box" class="scoring-box" style="display:none; margin-bottom:12px;">
+              <strong>Chọn học sinh được vào phòng</strong>
+              <input type="text" id="st-whitelist-input" class="input-sm" style="width:100%;margin:8px 0;" placeholder="Tên đăng nhập cách nhau dấu phẩy..." />
+              <div id="st-student-picker" class="student-picker-grid"></div>
+            </div>
+
+            <div class="scoring-box">
+              <strong><i class="fa-solid fa-calculator"></i> Thang điểm</strong>
+              <div class="form-grid" style="margin-top:8px; margin-bottom:0;">
+                <div class="field">
+                  <label>Phần I (TN 4 PA)</label>
+                  <input type="number" id="st-p1-pts" step="0.05" value="0.25" />
+                </div>
+                <div class="field">
+                  <label>Phần II (Đúng/Sai)</label>
+                  <input type="number" id="st-p2-pts" step="0.1" value="1.0" />
+                </div>
+                <div class="field">
+                  <label>Phần III (Trả lời ngắn)</label>
+                  <input type="number" id="st-p3-pts" step="0.05" value="0.5" />
+                </div>
+                <div class="field">
+                  <label>Quy đổi thang điểm</label>
+                  <select id="st-scale-mode">
+                    <option value="raw">Cộng trực tiếp</option>
+                    <option value="scale10">Quy đổi thang 10</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- KHU VỰC TẢI FILE WORD (.DOCX) GỌN GÀNG -->
+            <div class="dropzone" id="word-dropzone" onclick="document.getElementById('word-file-input').click()">
+              <i class="fa-solid fa-file-word"></i>
+              <strong>Tải lên file Word (.docx)</strong>
+              <input type="file" id="word-file-input" accept=".docx" hidden onchange="handleWordUpload(event)" />
+            </div>
+
+            <!-- DANH SÁCH CÂU HỎI ĐÃ TẠO / NHẬN DIỆN -->
+            <div id="word-preview-area" style="display:none; margin-top:16px;">
+              <div class="section-header" style="margin-top:0;">
+                <h3 id="word-preview-summary">Danh sách câu hỏi của đề</h3>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                  
+                  
+                  
+                  <button type="button" class="btn btn-primary" onclick="publishParsedExam()">
+                    <i class="fa-solid fa-rocket"></i> Xuất bản đề
+                  </button>
+                </div>
+              </div>
+              <div id="word-preview-list" class="preview-list"></div>
+              <div id="word-essay-preview-box" style="display:none;margin-top:12px;" class="scoring-box">
+                <strong><i class="fa-solid fa-pen-fancy"></i> Phần Tự luận</strong>
+                <div id="word-essay-live-preview" class="q-content" style="margin-top:8px;padding:10px;background:var(--surface-solid);border-radius:10px;"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: QUẢN LÝ ĐỀ -->
+        <div class="studio-tab" id="studio-tab-manage">
+          <div class="panel glass">
+            <h3><i class="fa-solid fa-folder-tree"></i> Danh sách đề</h3>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Mã / Tên đề</th>
+                    <th>Khối</th>
+                    <th>Loại</th>
+                    <th>Bài chữa</th>
+                    <th>Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody id="manage-sets-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: TÀI KHOẢN & PHÂN LỚP (10, 11, 12, THPTQG, HSG) -->
+        <div class="studio-tab" id="studio-tab-accounts">
+          <div class="panel glass admin-only" id="admin-create-teacher-box" style="display:none;">
+            <h3><i class="fa-solid fa-user-plus"></i> Tạo tài khoản Giáo viên</h3>
+            <form onsubmit="createTeacherAccount(event)" style="margin-top:12px;">
+              <div class="form-grid">
+                <div class="field">
+                  <label>Họ và tên</label>
+                  <input type="text" id="t-name" required placeholder="Nhập họ tên giáo viên..." />
+                </div>
+                <div class="field">
+                  <label>Tên người dùng</label>
+                  <input type="text" id="t-username" required placeholder="Nhập tên đăng nhập..." oninput="validateUsernameField(this, 't-user-hint')" />
+                  <small id="t-user-hint" class="field-hint"></small>
+                </div>
+                <div class="field">
+                  <label>Giới tính</label>
+                  <select id="t-gender">
+                    <option value="Nam">Nam</option>
+                    <option value="Nữ">Nữ</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Mật khẩu</label>
+                  <input type="password" id="t-pass" required placeholder="••••••••" />
+                </div>
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm">
+                <i class="fa-solid fa-key"></i> Cấp tài khoản Giáo viên
+              </button>
+            </form>
+          </div>
+
+          <div class="panel glass">
+            <div class="section-header" style="margin-top:0;">
+              <h3><i class="fa-solid fa-users"></i> Danh sách Học sinh & Giáo viên</h3>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <select id="account-role-filter" class="input-sm" onchange="renderAccountsTable()">
+                  <option value="ALL">Tất cả thành viên</option>
+                  <option value="student">Học sinh</option>
+                  <option value="teacher">Giáo viên</option>
+                </select>
+                <input type="text" id="account-search" class="input-sm" placeholder="Tìm học sinh, giáo viên..." oninput="renderAccountsTable()" />
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Thành viên</th>
+                    <th>Tài khoản</th>
+                    <th>Vai trò</th>
+                    <th class="col-center">Lớp 10</th>
+                    <th class="col-center">Lớp 11</th>
+                    <th class="col-center">Lớp 12</th>
+                    <th class="col-center">Ôn THPTQG</th>
+                    <th class="col-center">Ôn HSG</th>
+                    <th class="admin-only-col">Quản trị</th>
+                  </tr>
+                </thead>
+                <tbody id="accounts-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 4: GIÁM SÁT & KẾT QUẢ -->
+        <div class="studio-tab" id="studio-tab-monitor">
+          <div class="panel glass">
+            <div class="section-header" style="margin-top:0;">
+              <h3><i class="fa-solid fa-satellite-dish"></i> Giám sát & Kết quả</h3>
+              <button class="btn btn-success btn-sm" onclick="exportResultsCSV()">
+                <i class="fa-solid fa-file-excel"></i> Xuất CSV
+              </button>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Học sinh</th>
+                    <th>Đề</th>
+                    <th>Loại</th>
+                    <th>Điểm</th>
+                    <th>Vi phạm</th>
+                    <th>Trạng thái</th>
+                  </tr>
+                </thead>
+                <tbody id="monitor-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer class="om-brand-footer">
+        <div class="om-footer-brand-row">
+          <div class="om-footer-logo-mark">
+            <span class="om-f-blue">ORIGIN</span><span class="om-f-white">MATH</span>
+          </div>
+          <div class="om-footer-tagline">ORIGIN MATH – NỀN TẢNG LUYỆN THI & KHẢO THÍ TOÁN THPT</div>
+          <div class="om-footer-motto">TƯ DUY SÂU • BẢN CHẤT CHUẨN • CHINH PHỤC MỌI KỲ THI</div>
+          <p class="om-footer-desc">Đồng hành cùng học sinh trên con đường chinh phục tri thức Toán học!</p>
+        </div>
+        <div class="om-footer-bottom-bar">
+          <div>Sản phẩm này thuộc bản quyền của <span class="om-copyright-owner">Nguyễn Phúc Nguyên</span></div>
+          
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <!-- GIAO DIỆN LUYỆN ĐỀ -->
+  <div id="practice-overlay" class="practice-overlay" style="display:none;">
+    <header class="prac-topbar">
+      <div class="prac-title-wrap">
+        <strong id="prac-active-title">Luyện đề</strong>
+        <span class="prac-sub" id="prac-active-sub"></span>
+      </div>
+      <div class="prac-controls">
+        <span class="prac-chip q-cur-time"><i class="fa-solid fa-stopwatch"></i> Câu này: <strong id="prac-q-timer">00:00</strong></span>
+        <span class="prac-chip"><i class="fa-regular fa-clock"></i> Còn lại: <strong id="prac-timer">00:00</strong></span>
+        <button class="btn btn-warning btn-xs" id="prac-board-toggle-btn" style="display:none;" onclick="toggleTeacherBoardPanel()">
+          <i class="fa-solid fa-chalkboard"></i> Bảng chữa đề
+        </button>
+        <button class="btn btn-success btn-sm" id="prac-submit-btn" onclick="submitPracticeSession(false)">
+          <i class="fa-solid fa-paper-plane"></i> Nộp & Chấm
+        </button>
+        <button class="btn btn-warning btn-sm" id="prac-retry-wrong-btn" style="display:none;" onclick="startRetryWrongFromPractice()">
+          <i class="fa-solid fa-wrench"></i> Làm lại câu sai
+        </button>
+        <button class="icon-btn" onclick="adjustExamFont(-1)">A-</button>
+        <button class="icon-btn" onclick="adjustExamFont(1)">A+</button>
+        <button class="btn btn-danger btn-sm" onclick="closePracticeSession()">Thoát</button>
+      </div>
+    </header>
+
+    <div class="prac-strip-bar" id="prac-strip-bar">
+      <button class="btn btn-ghost btn-sm" onclick="stepPracticeQuestion(-1)"><i class="fa-solid fa-chevron-left"></i> Câu trước</button>
+      <div class="prac-strip-nums" id="prac-strip-nums"></div>
+      <button class="btn btn-ghost btn-sm" onclick="stepPracticeQuestion(1)">Câu sau <i class="fa-solid fa-chevron-right"></i></button>
+    </div>
+
+    <div class="prac-main-scroll">
+      <div id="prac-result-banner" class="prac-result-banner" style="display:none;"></div>
+      <div class="prac-card glass q-stage-anim" id="prac-question-stage"></div>
+      <div class="prac-card glass" id="prac-essay-stage" style="display:none;"></div>
+
+      <!-- BẢNG VIẾT CHỮA ĐỀ A4 — GIAO DIỆN CHUẨN SCRBLE INK -->
+      <div class="prac-board-card glass" id="teacher-board-wrap" style="display:none;">
+        <div class="scrble-topbar">
+          <div class="scrble-group">
+            <button type="button" class="scrble-icon-btn" onclick="wbUndo()" title="Hoàn tác (Ctrl+Z)"><i class="fa-solid fa-rotate-left"></i></button>
+            <button type="button" class="scrble-icon-btn" onclick="wbRedo()" title="Làm lại"><i class="fa-solid fa-rotate-right"></i></button>
+            <button type="button" class="scrble-icon-btn" onclick="wbAddPage()" title="Thêm trang A4 mới"><i class="fa-solid fa-file-circle-plus"></i></button>
+            <div class="scrble-page-nav">
+              <button type="button" class="scrble-mini-btn" onclick="wbPrevPage()" title="Trang trước"><i class="fa-solid fa-chevron-left"></i></button>
+              <span id="wb-page-label">(1/1)</span>
+              <button type="button" class="scrble-mini-btn" onclick="wbNextPage()" title="Trang sau"><i class="fa-solid fa-chevron-right"></i></button>
+            </div>
+          </div>
+
+          <div class="scrble-group scrble-center-tools">
+            <!-- Bảng chọn 5 loại bút + Bảng 30 màu + Đường sóng độ dày giống hệt Scrble Ink -->
+            <div class="scrble-popover-wrap">
+              <button type="button" class="scrble-pen-circle active" id="scrble-pen-main-btn" onclick="toggleScrblePopover('scrble-pen-popover', event)" title="Chọn 5 loại bút, màu sắc & độ dày">
+                <i class="fa-solid fa-pen-nib"></i>
+              </button>
+              <div class="scrble-popover" id="scrble-pen-popover" onclick="event.stopPropagation()">
+                <div class="scrble-pop-title">Pen</div>
+                <div class="scrble-pen-types">
+                  <button type="button" class="scrble-type-btn active" data-pen="calligraphy" onclick="selectScrblePenType('calligraphy', this)" title="1. Bút thư pháp thanh đậm"><i class="fa-solid fa-feather-pointed"></i></button>
+                  <button type="button" class="scrble-type-btn" data-pen="pen" onclick="selectScrblePenType('pen', this)" title="2. Bút nét đều"><i class="fa-solid fa-pen"></i></button>
+                  <button type="button" class="scrble-type-btn" data-pen="fountain" onclick="selectScrblePenType('fountain', this)" title="3. Bút máy"><i class="fa-solid fa-pen-nib"></i></button>
+                  <button type="button" class="scrble-type-btn" data-pen="brush" onclick="selectScrblePenType('brush', this)" title="4. Bút cọ"><i class="fa-solid fa-paintbrush"></i></button>
+                  <button type="button" class="scrble-type-btn" data-pen="marker" onclick="selectScrblePenType('marker', this)" title="5. Bút dạ"><i class="fa-solid fa-marker"></i></button>
+                </div>
+
+                <div class="scrble-pop-title" style="margin-top:10px;">Color</div>
+                <div class="scrble-color-grid">
+                  <button type="button" class="wb-color active" style="background:#0f172a" onclick="setWbColor('#0f172a', this)"></button>
+                  <button type="button" class="wb-color" style="background:#ffffff;border:1px solid #cbd5e1" onclick="setWbColor('#ffffff', this)"></button>
+                  <button type="button" class="wb-color" style="background:#d1d5db" onclick="setWbColor('#d1d5db', this)"></button>
+                  <button type="button" class="wb-color" style="background:#9ca3af" onclick="setWbColor('#9ca3af', this)"></button>
+                  <button type="button" class="wb-color" style="background:#6b7280" onclick="setWbColor('#6b7280', this)"></button>
+                  <button type="button" class="wb-color" style="background:#374151" onclick="setWbColor('#374151', this)"></button>
+
+                  <button type="button" class="wb-color" style="background:#be185d" onclick="setWbColor('#be185d', this)"></button>
+                  <button type="button" class="wb-color" style="background:#ef4444" onclick="setWbColor('#ef4444', this)"></button>
+                  <button type="button" class="wb-color" style="background:#f97316" onclick="setWbColor('#f97316', this)"></button>
+                  <button type="button" class="wb-color" style="background:#f59e0b" onclick="setWbColor('#f59e0b', this)"></button>
+                  <button type="button" class="wb-color" style="background:#eab308" onclick="setWbColor('#eab308', this)"></button>
+                  <button type="button" class="wb-color" style="background:#facc15" onclick="setWbColor('#facc15', this)"></button>
+
+                  <button type="button" class="wb-color" style="background:#84cc16" onclick="setWbColor('#84cc16', this)"></button>
+                  <button type="button" class="wb-color" style="background:#22c55e" onclick="setWbColor('#22c55e', this)"></button>
+                  <button type="button" class="wb-color" style="background:#059669" onclick="setWbColor('#059669', this)"></button>
+                  <button type="button" class="wb-color" style="background:#06b6d4" onclick="setWbColor('#06b6d4', this)"></button>
+                  <button type="button" class="wb-color" style="background:#2563eb" onclick="setWbColor('#2563eb', this)"></button>
+                  <button type="button" class="wb-color" style="background:#4338ca" onclick="setWbColor('#4338ca', this)"></button>
+
+                  <button type="button" class="wb-color" style="background:#7c3aed" onclick="setWbColor('#7c3aed', this)"></button>
+                  <button type="button" class="wb-color" style="background:#6b21a8" onclick="setWbColor('#6b21a8', this)"></button>
+                  <button type="button" class="wb-color" style="background:#fed7aa" onclick="setWbColor('#fed7aa', this)"></button>
+                  <button type="button" class="wb-color" style="background:#d97706" onclick="setWbColor('#d97706', this)"></button>
+                  <button type="button" class="wb-color" style="background:#92400e" onclick="setWbColor('#92400e', this)"></button>
+                  <button type="button" class="wb-color" style="background:#451a03" onclick="setWbColor('#451a03', this)"></button>
+
+                  <button type="button" class="wb-color" style="background:#f472b6" onclick="setWbColor('#f472b6', this)"></button>
+                  <button type="button" class="wb-color" style="background:#fdba74" onclick="setWbColor('#fdba74', this)"></button>
+                  <button type="button" class="wb-color" style="background:#fef08a" onclick="setWbColor('#fef08a', this)"></button>
+                  <button type="button" class="wb-color" style="background:#4ade80" onclick="setWbColor('#4ade80', this)"></button>
+                  <button type="button" class="wb-color" style="background:#22d3ee" onclick="setWbColor('#22d3ee', this)"></button>
+                  <input type="color" id="wb-custom-color" value="#1d4ed8" class="scrble-rainbow-picker" oninput="setWbColor(this.value, null)" title="Chọn màu bất kỳ" />
+                </div>
+
+                <div class="scrble-pop-title" style="margin-top:10px;">Size: <span id="wb-size-label">3.8px</span></div>
+                <svg viewBox="0 0 220 36" class="scrble-wave-preview">
+                  <path id="scrble-wave-path" d="M 10 22 Q 60 4, 110 20 T 210 18" fill="none" stroke="#0f172a" stroke-width="3.8" stroke-linecap="round"/>
+                </svg>
+                <input type="range" id="wb-size" class="om-slider" min="1.5" max="14" step="0.5" value="3.8" oninput="updateWbSizePreview(this.value)" style="width:100%;" />
+              </div>
+            </div>
+
+            <!-- Chấm màu nhanh trên thanh công cụ -->
+            <button type="button" class="scrble-dot" style="background:#0f172a" onclick="quickPickColor('#0f172a')" title="Đen"></button>
+            <button type="button" class="scrble-dot" style="background:#ef4444" onclick="quickPickColor('#ef4444')" title="Đỏ"></button>
+            <button type="button" class="scrble-dot" style="background:#06b6d4" onclick="quickPickColor('#06b6d4')" title="Xanh ngọc"></button>
+            <button type="button" class="scrble-dot" style="background:#2563eb" onclick="quickPickColor('#2563eb')" title="Xanh dương"></button>
+            <button type="button" class="scrble-dot" style="background:#db2777" onclick="quickPickColor('#db2777')" title="Hồng"></button>
+            <button type="button" class="scrble-dot" style="background:#f59e0b" onclick="quickPickColor('#f59e0b')" title="Cam"></button>
+            <button type="button" class="scrble-dot" style="background:#22c55e" onclick="quickPickColor('#22c55e')" title="Xanh lá"></button>
+
+            <!-- Bút dạ quang -->
+            <button type="button" class="scrble-hl-btn wb-btn" data-tool="highlighter" onclick="setWbTool('highlighter', this)" title="Bút dạ quang liền nét">
+              <i class="fa-solid fa-highlighter"></i>
+            </button>
+
+            <!-- Bút Laser nét liền (vẽ nhiều nét thoải mái, chỉ biến mất khi chuyển công cụ khác) -->
+            <button type="button" class="scrble-laser-circle wb-btn" data-tool="laser" onclick="setWbTool('laser', this)" title="Bút Laser nét liền minh họa (mất khi chuyển công cụ khác)">
+              <i class="fa-solid fa-wave-square"></i>
+            </button>
+
+            <!-- Bảng hình vẽ có sẵn & Văn bản (T) giống Ảnh 5 -->
+            <div class="scrble-popover-wrap">
+              <button type="button" class="scrble-icon-btn wb-btn" id="scrble-shapes-btn" onclick="toggleScrblePopover('scrble-shapes-popover', event)" title="Văn bản & Hình vẽ có sẵn">
+                <i class="fa-solid fa-shapes"></i>
+              </button>
+              <div class="scrble-popover scrble-shapes-pop" id="scrble-shapes-popover" onclick="event.stopPropagation()">
+                <div class="scrble-shapes-grid">
+                  <button type="button" class="scrble-shape-cell" onclick="pickShapeOrText('text')" title="Gõ văn bản (T)"><strong>T</strong></button>
+                  <button type="button" class="scrble-shape-cell" onclick="pickShapeOrText('line')" title="Đoạn thẳng"><i class="fa-solid fa-slash"></i></button>
+                  <button type="button" class="scrble-shape-cell" onclick="pickShapeOrText('dashed')" title="Nét đứt"><i class="fa-solid fa-ellipsis"></i></button>
+                  <button type="button" class="scrble-shape-cell" onclick="pickShapeOrText('arrow')" title="Mũi tên"><i class="fa-solid fa-arrow-right-long"></i></button>
+                  <button type="button" class="scrble-shape-cell" onclick="pickShapeOrText('double-arrow')" title="Mũi tên hai chiều"><i class="fa-solid fa-arrows-left-right"></i></button>
+                  <button type="button" class="scrble-shape-cell" onclick="pickShapeOrText('circle')" title="Hình tròn"><i class="fa-regular fa-circle"></i></button>
+                  <button type="button" class="scrble-shape-cell" onclick="pickShapeOrText('ellipse')" title="Hình Elip">⬭</button>
+                  <button type="button" class="scrble-shape-cell" onclick="pickShapeOrText('rect')" title="Hình chữ nhật"><i class="fa-regular fa-square"></i></button>
+                  <button type="button" class="scrble-shape-cell" onclick="pickShapeOrText('triangle')" title="Tam giác">△</button>
+                  <button type="button" class="scrble-shape-cell" onclick="pickShapeOrText('right-triangle')" title="Tam giác vuông">⊿</button>
+                  <button type="button" class="scrble-shape-cell" onclick="pickShapeOrText('diamond')" title="Hình thoi">◇</button>
+                  <button type="button" class="scrble-shape-cell" onclick="pickShapeOrText('axis-xy')" title="Hệ trục tọa độ Oxy">Oxy</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2 loại tẩy riêng biệt với biểu tượng hình tròn to rõ -->
+            <button type="button" class="scrble-icon-btn wb-btn" data-tool="eraser-stroke" onclick="setWbTool('eraser-stroke', this)" title="Tẩy cả đường vẽ (di qua đường/hình là xóa hẳn)">
+              <i class="fa-solid fa-circle-xmark"></i>
+            </button>
+            <button type="button" class="scrble-icon-btn wb-btn" data-tool="eraser-detail" onclick="setWbTool('eraser-detail', this)" title="Tẩy từng chi tiết nhỏ">
+              <i class="fa-solid fa-eraser"></i>
+            </button>
+
+            
+          </div>
+
+          <div class="scrble-group" style="margin-left:auto;">
+            <select id="wb-bg-select" class="wb-select" onchange="setWbBgMode(this.value)" title="Nền giấy A4">
+              <option value="grid" selected>Lưới ô vuông</option>
+              <option value="lined">Dòng kẻ ngang</option>
+              <option value="oxy">Hệ trục Oxy</option>
+              <option value="blank">Giấy trắng A4</option>
+            </select>
+            <button type="button" class="scrble-icon-btn" onclick="clearWhiteboard()" title="Xóa trang"><i class="fa-solid fa-trash"></i></button>
+            <button type="button" class="scrble-icon-btn" onclick="toggleWbFullscreen()" title="Toàn màn hình"><i class="fa-solid fa-expand"></i></button>
+            <button type="button" class="btn btn-success btn-xs" onclick="publishHandwrittenSolution()"><i class="fa-solid fa-cloud-arrow-up"></i> Đăng bài chữa</button>
+          </div>
+        </div>
+
+        <div class="wb-a4-stage">
+          <div class="wb-canvas-stack" id="wb-canvas-stack">
+            <canvas id="teacher-whiteboard" width="1240" height="877"></canvas>
+            <canvas id="teacher-laser-canvas" width="1240" height="877"></canvas>
+            <input type="text" id="wb-floating-text-input" class="wb-floating-text" placeholder="Nhập chữ rồi nhấn Enter..." style="display:none;" onkeydown="onWbTextKeydown(event)" onblur="commitWbFloatingText()" />
+          </div>
+        </div>
+      </div>
+
+      <!-- BÀI CHỮA VIẾT TAY CỦA GIÁO VIÊN HIỂN THỊ DƯỚI ĐỀ CHO HỌC SINH -->
+      <div class="prac-card glass" id="prac-handwritten-view" style="display:none;"></div>
+    </div>
+  </div>
+
+  <!-- PHÒNG KHẢO THÍ NGHIÊM NGẶT -->
+  <div id="exam-modal" class="exam-overlay" style="display:none;">
+    <header class="exam-header">
+      <div class="exam-meta">
+        <span class="chip chip-primary" id="exam-room-badge">EXAM</span>
+        <strong id="exam-active-title">Đang thi...</strong>
+      </div>
+      <div class="exam-controls">
+        <span class="q-cur-pill">
+          <i class="fa-solid fa-stopwatch"></i> Câu này: <strong id="exam-cur-q-timer">00:00</strong>
+        </span>
+        <div class="violation-pill">
+          <i class="fa-solid fa-shield-exclamation"></i> Vi phạm: <span id="exam-viol-count">0</span>/<span id="exam-viol-max">3</span>
+        </div>
+        <div class="timer-pill" id="exam-timer">
+          <i class="fa-regular fa-clock"></i> <span id="exam-time-text">00:00</span>
+        </div>
+        <button class="icon-btn" onclick="adjustExamFont(-1)">A-</button>
+        <button class="icon-btn" onclick="adjustExamFont(1)">A+</button>
+        <button class="btn btn-danger btn-sm" onclick="confirmSubmitExam(false)">
+          <i class="fa-solid fa-paper-plane"></i> Nộp bài
+        </button>
+      </div>
+    </header>
+
+    <div class="exam-body">
+      <div class="exam-questions-pane" id="exam-questions-pane"></div>
+      <aside class="exam-palette-pane">
+        <div class="palette-head">
+          <strong>Danh sách câu</strong>
+          <span id="exam-progress-text">0/0</span>
+        </div>
+        <div class="progress-bar"><div class="progress-fill" id="exam-progress-fill"></div></div>
+        <div class="palette-grid" id="exam-palette-grid"></div>
+        <div class="palette-legend">
+          <span><i class="lg-dot active"></i> Đang làm</span>
+          <span><i class="lg-dot done"></i> Đã chọn</span>
+          <span><i class="lg-dot flag"></i> Xem lại</span>
+        </div>
+      </aside>
+    </div>
+
+    <div id="anticheat-lock" class="anticheat-lock" style="display:none;">
+      <div class="lock-card">
+        <div class="lock-icon"><i class="fa-solid fa-triangle-exclamation"></i></div>
+        <h2 id="anticheat-title">CẢNH BÁO VI PHẠM!</h2>
+        <p id="anticheat-reason"></p>
+        <p class="lock-counter">Vi phạm: <strong id="lock-viol-display">1/3</strong></p>
+        <button class="btn btn-primary" id="anticheat-action-btn" onclick="resumeExamFullscreen()">
+          <i class="fa-solid fa-expand"></i> Quay lại phòng thi
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL KẾT QUẢ / XEM LẠI CHI TIẾT TỪNG CÂU / PHÂN QUYỀN -->
+  <div id="result-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card modal-lg glass">
+      <div class="modal-head">
+        <h3 id="result-modal-title"><i class="fa-solid fa-award"></i> Kết quả</h3>
+        <button class="icon-btn" onclick="closeModal('result-modal')"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div id="result-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- MODAL ĐĂNG NHẬP / ĐĂNG KÝ -->
+  <div id="auth-modal" class="modal-backdrop" style="display:none;">
+    <div class="modal-card glass">
+      <div class="modal-head">
+        <h3><i class="fa-solid fa-user-shield"></i> Origin Math</h3>
+        <button class="icon-btn" onclick="closeModal('auth-modal')"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      <div class="auth-tabs">
+        <button class="auth-tab active" onclick="switchAuthTab('login', this)">Đăng nhập</button>
+        <button class="auth-tab" onclick="switchAuthTab('register', this)">Đăng ký học sinh</button>
+      </div>
+      <form id="auth-form" onsubmit="handleAuthSubmit(event)">
+        <div class="field reg-only" style="display:none;">
+          <label>Họ và tên</label>
+          <input type="text" id="reg-fullname" placeholder="Nhập họ tên..." />
+        </div>
+        <div class="field">
+          <label>Tên người dùng</label>
+          <input type="text" id="auth-username" required placeholder="Nhập tên đăng nhập..." oninput="validateUsernameField(this, 'auth-user-hint')" />
+          <small id="auth-user-hint" class="field-hint"></small>
+        </div>
+        <div class="form-grid reg-only" style="display:none; margin-bottom:0;">
+          <div class="field">
+            <label>Lớp</label>
+            <select id="reg-grade">
+              <option value="10">Lớp 10</option>
+              <option value="11">Lớp 11</option>
+              <option value="12" selected>Lớp 12</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Giới tính</label>
+            <select id="reg-gender">
+              <option value="Nam">Nam</option>
+              <option value="Nữ">Nữ</option>
+            </select>
+          </div>
+        </div>
+        <div class="field reg-only" style="display:none;">
+          <label>Ngày sinh</label>
+          <input type="date" id="reg-dob" />
+        </div>
+        <div class="field">
+          <label>Mật khẩu</label>
+          <input type="password" id="auth-password" required placeholder="••••••••" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block" id="auth-submit-btn">Đăng nhập</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- NGĂN KÉO CÁ NHÂN HÓA -->
+  <aside id="theme-drawer" class="theme-drawer glass">
+    <div class="modal-head">
+      <h3><i class="fa-solid fa-sliders"></i> Cá nhân hóa</h3>
+      <button class="icon-btn" onclick="toggleThemeDrawer()"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+
+    <div class="drawer-section holiday-drawer-box">
+      <label class="drawer-label">Giao diện Lễ hội</label>
+      <label class="toggle-line">
+        <input type="checkbox" id="pref-holiday-auto" checked onchange="toggleHolidayAuto()" /> Tự động theo ngày lễ
+      </label>
+      <div id="holiday-active-note" class="muted" style="margin:6px 0 8px;font-size:12px;"></div>
+      <select id="pref-holiday-preview" class="input-sm" style="width:100%;" onchange="setHolidayPreview(this.value)">
+        <option value="auto">Tự động</option>
+        <option value="none">Tắt lễ hội</option>
+        <option value="tet">Tết Nguyên Đán</option>
+        <option value="newyear">Tết Dương Lịch</option>
+        <option value="valentine">Valentine 14/02</option>
+        <option value="women83">Quốc tế Phụ nữ 08/03</option>
+        <option value="hungkings">Giỗ Tổ Hùng Vương</option>
+        <option value="liberation">30/04 & 01/05</option>
+        <option value="nationalday">Quốc khánh 02/09</option>
+        <option value="midautumn">Trung Thu</option>
+        <option value="women2010">Phụ nữ VN 20/10</option>
+        <option value="halloween">Halloween 31/10</option>
+        <option value="teachers">Nhà giáo VN 20/11</option>
+        <option value="christmas">Giáng Sinh 25/12</option>
+      </select>
+    </div>
+
+    <div class="drawer-section">
+      <label class="drawer-label">Chế độ</label>
+      <div class="mode-switch-row">
+        <button class="pill" onclick="setDarkMode(false)"><i class="fa-solid fa-sun"></i> Sáng</button>
+        <button class="pill" onclick="setDarkMode(true)"><i class="fa-solid fa-moon"></i> Tối</button>
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <label class="drawer-label">Màu chủ đạo</label>
+      <div class="swatch-row">
+        <button class="swatch" style="background:#4f46e5" onclick="setAccent('indigo')" title="Chàm"></button>
+        <button class="swatch" style="background:#059669" onclick="setAccent('emerald')" title="Ngọc"></button>
+        <button class="swatch" style="background:#0284c7" onclick="setAccent('sky')" title="Xanh trời"></button>
+        <button class="swatch" style="background:#ec4899" onclick="setAccent('pink')" title="Hồng"></button>
+        <button class="swatch" style="background:#e11d48" onclick="setAccent('rose')" title="Đỏ hồng"></button>
+        <button class="swatch" style="background:#d97706" onclick="setAccent('amber')" title="Vàng cam"></button>
+        <button class="swatch" style="background:#7c3aed" onclick="setAccent('violet')" title="Tím"></button>
+      </div>
+    </div>
+
+    <div class="drawer-section">
+      <label class="drawer-label">Hình nền</label>
+      <div class="bg-preset-grid">
+        <button class="bg-preset" onclick="setBgPreset('clean')">Tối giản</button>
+        <button class="bg-preset" onclick="setBgPreset('grid')">Lưới Toán</button>
+        <button class="bg-preset" onclick="setBgPreset('dots')">Chấm bi</button>
+        <button class="bg-preset" onclick="setBgPreset('aurora')">Cực quang</button>
+        <button class="bg-preset" onclick="setBgPreset('sunset')">Hoàng hôn</button>
+        <button class="bg-preset" onclick="document.getElementById('custom-bg-upload').click()">Ảnh cá nhân</button>
+      </div>
+      <input type="file" id="custom-bg-upload" accept="image/*" hidden onchange="handleCustomBgUpload(event)" />
+    </div>
+
+    <div class="drawer-section">
+      <label class="drawer-label">Chữ chạy nền</label>
+      <label class="toggle-line"><input type="checkbox" id="pref-marquee-on" onchange="updateMarqueePrefs()" /> Bật chữ chạy nền</label>
+      <input type="text" id="pref-marquee-text" class="input-sm" style="width:100%;margin-top:8px;" placeholder="ORIGIN MATH" oninput="updateMarqueePrefs()" />
+      <input type="range" class="om-slider" id="pref-marquee-opacity" min="2" max="22" value="7" oninput="updateMarqueePrefs()" style="width:100%;margin-top:10px;" />
+    </div>
+
+    <div class="drawer-section">
+      <label class="drawer-label">Độ mờ kính: <span id="blur-val">14px</span></label>
+      <input type="range" class="om-slider" min="0" max="26" value="14" oninput="setGlassBlur(this.value)" style="width:100%;" />
+    </div>
+  </aside>
+
+  <div id="toast-container" class="toast-container"></div>
+  <script src="app.js"></script>
+</body>
+</html>
