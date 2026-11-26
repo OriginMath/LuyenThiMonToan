@@ -201,6 +201,7 @@ const state = {
   submissions: JSON.parse(localStorage.getItem("om_v8_subs") || "[]"),
   participants: JSON.parse(localStorage.getItem("om_v8_parts") || "[]"),
   handwrittenSolutions: JSON.parse(localStorage.getItem("om_v8_hw_sols") || "{}"),
+  classesMap: JSON.parse(localStorage.getItem("om_v8_classes_map") || "{\"10\":[],\"11\":[],\"12\":[],\"THPTQG\":[],\"HSG\":[]}"),
   prefs: { ...DEFAULT_PREFS, ...JSON.parse(localStorage.getItem("om_v8_prefs") || "{}") },
   parsedWordQuestions: [],
   parsedEssayHTML: "",
@@ -225,6 +226,7 @@ function reloadStateFromStorage() {
   state.submissions = JSON.parse(localStorage.getItem("om_v8_subs") || "[]");
   state.participants = JSON.parse(localStorage.getItem("om_v8_parts") || "[]");
   state.handwrittenSolutions = JSON.parse(localStorage.getItem("om_v8_hw_sols") || "{}");
+  state.classesMap = JSON.parse(localStorage.getItem("om_v8_classes_map") || "{\"10\":[],\"11\":[],\"12\":[],\"THPTQG\":[],\"HSG\":[]}");
 
   if (state.user) {
     if (!state.usersMap[state.user.uid] && state.user.uid !== "admin-root") {
@@ -237,6 +239,12 @@ function reloadStateFromStorage() {
     renderUserUI();
   }
   refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
   if (state.pracSession.active && state.pracSession.set) {
     renderHandwrittenSolutionView(state.pracSession.set.id);
   }
@@ -251,6 +259,7 @@ function saveAndBroadcast(type = "sync") {
     localStorage.setItem("om_v8_subs", JSON.stringify(state.submissions));
     localStorage.setItem("om_v8_parts", JSON.stringify(state.participants));
     localStorage.setItem("om_v8_hw_sols", JSON.stringify(state.handwrittenSolutions));
+    localStorage.setItem("om_v8_classes_map", JSON.stringify(state.classesMap));
     localStorage.setItem("om_v8_prefs", JSON.stringify(state.prefs));
   } catch (err) {
     console.warn("Storage warning:", err);
@@ -263,7 +272,7 @@ if (syncChannel) {
   syncChannel.onmessage = () => reloadStateFromStorage();
 }
 window.addEventListener("storage", (e) => {
-  if (e.key && e.key.startsWith("om_v8_")) reloadStateFromStorage();
+  if (e.key && e.key.startsWith("om_v8_") && e.key !== "om_v8_active_view") reloadStateFromStorage();
 });
 
 function initFirebase() {
@@ -295,16 +304,34 @@ function initFirebase() {
         renderUserUI();
       }
       refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
     });
 
     fbDb.collection("exams").orderBy("createdAt", "desc").onSnapshot((snap) => {
       state.sets = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
     });
 
     fbDb.collection("submissions").orderBy("submittedAt", "desc").onSnapshot((snap) => {
       state.submissions = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
     });
 
     fbDb.collection("participants").onSnapshot((snap) => {
@@ -352,6 +379,12 @@ function initFirebase() {
       localStorage.setItem("om_v8_user", JSON.stringify(state.user));
       renderUserUI();
       refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
     });
   } catch (e) { console.error(e); }
 }
@@ -593,7 +626,10 @@ function applyPreferences() {
     state.prefs.bg === "custom" && state.prefs.customBg ? `url(${state.prefs.customBg})` : "";
   document.getElementById("theme-toggle-btn").innerHTML = state.prefs.dark ? '<i class="fa-solid fa-sun"></i>' : '<i class="fa-solid fa-moon"></i>';
   
-  document.getElementById("blur-val").textContent = `${state.prefs.blur ?? 14}px`;
+  const curBlur = Number(state.prefs.blur ?? 14);
+  document.getElementById("blur-val").textContent = `${curBlur}px`;
+  const blurSl = document.getElementById("pref-blur-slider");
+  if (blurSl) blurSl.value = curBlur;
   document.getElementById("pref-marquee-on").checked = !!state.prefs.marqueeOn;
   document.getElementById("pref-marquee-text").value = state.prefs.marqueeText || "";
   document.getElementById("pref-marquee-opacity").value = state.prefs.marqueeOpacity || 7;
@@ -751,7 +787,9 @@ async function handleAuthSubmit(e) {
     if (isFirebaseLive) {
       try {
         const cred = await fbAuth.createUserWithEmailAndPassword(`${username}@originmath.local`, password);
-        const profile = { uid: cred.user.uid, name, username, grade, gender, dob, role: "student", grantedTracks: [], avatar, createdAt: Date.now() };
+        const profile = { uid: cred.user.uid, name, username, grade, gender, dob, role: "student", grantedTracks: [], avatar, organizerName: state.user?.name || "Quản trị viên",
+    organizerRole: state.user?.role || "admin",
+    createdAt: Date.now() };
         await fbDb.collection("users").doc(cred.user.uid).set(profile);
         closeModal("auth-modal");
         showToast("Đăng ký thành công!", "success");
@@ -761,11 +799,19 @@ async function handleAuthSubmit(e) {
 
     const uid = "stu-" + username;
     const passHash = await CryptoEngine.pbkdf2Hex(`${username}::${password}`, _OM_VAULT.s2, 1000);
-    const profile = { uid, name, username, grade, gender, dob, role: "student", grantedTracks: [], avatar, passHash, createdAt: Date.now() };
+    const profile = { uid, name, username, grade, gender, dob, role: "student", grantedTracks: [], avatar, passHash, organizerName: state.user?.name || "Quản trị viên",
+    organizerRole: state.user?.role || "admin",
+    createdAt: Date.now() };
     state.usersMap[uid] = profile;
     state.user = profile;
     saveAndBroadcast("user");
     renderUserUI(); refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
     closeModal("auth-modal");
     showToast(`Chào mừng ${name}!`, "success");
     return;
@@ -783,6 +829,12 @@ async function handleAuthSubmit(e) {
     state.user = adminProfile;
     saveAndBroadcast("user");
     renderUserUI(); refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
     closeModal("auth-modal");
     showToast("Đăng nhập Quản trị viên (Toàn quyền hệ thống)!", "success");
     return;
@@ -803,6 +855,12 @@ async function handleAuthSubmit(e) {
   state.user = found;
   saveAndBroadcast("user");
   renderUserUI(); refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
   closeModal("auth-modal");
   showToast("Chào mừng " + state.user.name, "success");
 }
@@ -813,6 +871,12 @@ async function handleLogout() {
   document.getElementById("user-dropdown").classList.remove("open");
   saveAndBroadcast("logout");
   renderUserUI(); refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
   switchView("dashboard");
   showToast("Đã đăng xuất.", "info");
 }
@@ -875,6 +939,12 @@ function handleAvatarUpload(e) {
     renderUserUI(); saveAndBroadcast("avatar");
     if (isFirebaseLive) await fbDb.collection("users").doc(state.user.uid).set({ avatar: dataUrl }, { merge: true }).catch(() => {});
     refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
     showToast("Đã cập nhật ảnh đại diện đồng bộ toàn hệ thống!", "success");
   });
 }
@@ -940,30 +1010,44 @@ async function createTeacherAccount(e) {
   e.preventDefault();
   if (!state.user || state.user.role !== "admin") return;
   const name = document.getElementById("t-name").value.trim();
-  const username = document.getElementById("t-username").value;
+  const username = document.getElementById("t-username").value.trim().toLowerCase();
   if (!USERNAME_REGEX.test(username)) return showToast("Tên đăng nhập chỉ gồm a-z, 0-9, _ (4-24 ký tự).", "error");
   const gender = document.getElementById("t-gender").value;
   const pass = document.getElementById("t-pass").value;
+  const tracks = Array.from(document.querySelectorAll(".t-track-chk:checked")).map(c => c.value);
+  if (!tracks.length) return showToast("Chọn ít nhất 1 hạng mục cho giáo viên!", "warn");
+
   const uid = "gv-" + username;
   const passHash = await CryptoEngine.pbkdf2Hex(`${username}::${pass}`, _OM_VAULT.s2, 1000);
-  const teacher = { uid, name, username, gender, grade: "", dob: "", role: "teacher", grantedTracks: ["10", "11", "12", "THPTQG", "HSG"], avatar: getDefaultAvatar(gender), passHash, createdAt: Date.now() };
+  const teacher = {
+    uid, name, username, gender, grade: tracks[0] || "12", dob: "",
+    role: "teacher", grantedTracks: tracks, assignedClasses: [],
+    avatar: getDefaultAvatar(gender), passHash, organizerName: state.user?.name || "Quản trị viên",
+    organizerRole: state.user?.role || "admin",
+    createdAt: Date.now()
+  };
   state.usersMap[uid] = teacher;
   saveAndBroadcast("teacher");
   if (isFirebaseLive) await fbDb.collection("users").doc(uid).set(teacher).catch(() => {});
   renderAccountsTable();
+  renderClassManagerUI();
   e.target.reset();
-  showToast(`Đã tạo tài khoản Giáo viên ${name}`, "success");
+  showToast(`Đã cấp tài khoản Giáo viên ${name} (@${username})`, "success");
 }
 
 function renderAccountsTable() {
   const tbody = document.getElementById("accounts-tbody");
   if (!tbody) return;
   const isAdmin = state.user && state.user.role === "admin";
+  const isTeacher = state.user && state.user.role === "teacher";
   const roleFilter = document.getElementById("account-role-filter")?.value || "ALL";
   const kw = (document.getElementById("account-search")?.value || "").trim().toLowerCase();
 
+  const allClasses = Object.values(state.classesMap || {}).flat();
+
   const members = Object.values(state.usersMap).filter(u => {
     if (u.role !== "student" && u.role !== "teacher") return false;
+    if (isTeacher && u.role === "teacher" && u.uid !== state.user.uid) return false;
     if (roleFilter !== "ALL" && u.role !== roleFilter) return false;
     if (kw && !u.name.toLowerCase().includes(kw) && !u.username.toLowerCase().includes(kw)) return false;
     return true;
@@ -976,11 +1060,25 @@ function renderAccountsTable() {
       ? `<span class="chip chip-primary">Học sinh</span>`
       : `<span class="chip chip-success">Giáo viên</span>`;
 
+    const foundClass = allClasses.find(c => (c.students || []).includes(u.username));
+    const classLabel = isStu
+      ? (foundClass ? `<span class="chip chip-primary">${escapeHtml(foundClass.name)}</span>` : `<span class="muted">Chưa xếp lớp</span>`)
+      : `<select class="input-sm" onchange="assignTeacherToClass('${u.uid}', this.value)">
+           <option value="">— Chọn lớp —</option>
+           ${allClasses.map(c => `<option value="${escapeHtml(c.name)}" ${u.assignedClass === c.name ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("")}
+         </select>`;
+
+    const canEditTrack = (t) => {
+      if (isAdmin) return true;
+      if (isTeacher) return (state.user.grantedTracks || []).includes(t);
+      return false;
+    };
+
     const hasTrack = (t) => isStu ? (String(u.grade) === t || tr.includes(t)) : tr.includes(t);
     const trackSwitch = (t) => `
       <td class="col-center">
         <label class="switch">
-          <input type="checkbox" ${hasTrack(t) ? "checked" : ""} onchange="toggleMemberClassTrack('${u.uid}', '${t}', this.checked)" />
+          <input type="checkbox" ${hasTrack(t) ? "checked" : ""} ${canEditTrack(t) ? "" : "disabled"} onchange="toggleMemberClassTrack('${u.uid}', '${t}', this.checked)" />
           <span class="slider"></span>
         </label>
       </td>`;
@@ -998,6 +1096,7 @@ function renderAccountsTable() {
       <td><div class="user-cell"><img src="${u.avatar}" alt=""/><strong>${escapeHtml(u.name)}</strong></div></td>
       <td><code>@${escapeHtml(u.username)}</code></td>
       <td>${roleCell}</td>
+      <td>${classLabel}</td>
       ${trackSwitch("10")}
       ${trackSwitch("11")}
       ${trackSwitch("12")}
@@ -1005,8 +1104,98 @@ function renderAccountsTable() {
       ${trackSwitch("HSG")}
       ${adminCell}
     </tr>`;
-  }).join("") : `<tr><td colspan="9" class="muted">Chưa có tài khoản học sinh hoặc giáo viên nào.</td></tr>`;
+  }).join("") : `<tr><td colspan="10" class="muted">Chưa có tài khoản học sinh hoặc giáo viên nào.</td></tr>`;
 }
+
+function createClassRoom() {
+  const track = document.getElementById("cls-track-select")?.value || "12";
+  const clsName = (document.getElementById("cls-new-name")?.value || "").trim();
+  if (!clsName) return showToast("Nhập tên lớp!", "warn");
+  if (!state.classesMap[track]) state.classesMap[track] = [];
+  if (state.classesMap[track].some(c => c.name.toLowerCase() === clsName.toLowerCase())) {
+    return showToast("Lớp này đã tồn tại trong hạng mục!", "warn");
+  }
+  state.classesMap[track].push({
+    id: "cls-" + track + "-" + Date.now(),
+    name: clsName,
+    students: []
+  });
+  document.getElementById("cls-new-name").value = "";
+  saveAndBroadcast("class_create");
+  renderClassManagerUI();
+  renderAccountsTable();
+  showToast(`Đã tạo lớp ${clsName}`, "success");
+}
+
+function addStudentToClass(track, clsId, stuUsername) {
+  if (!stuUsername) return;
+  const list = state.classesMap[track] || [];
+  const cls = list.find(c => c.id === clsId);
+  if (!cls) return;
+  if (!cls.students.includes(stuUsername)) cls.students.push(stuUsername);
+  saveAndBroadcast("class_student_add");
+  renderClassManagerUI();
+  renderAccountsTable();
+}
+
+function removeStudentFromClass(track, clsId, stuUsername) {
+  const list = state.classesMap[track] || [];
+  const cls = list.find(c => c.id === clsId);
+  if (!cls) return;
+  cls.students = cls.students.filter(u => u !== stuUsername);
+  saveAndBroadcast("class_student_rm");
+  renderClassManagerUI();
+  renderAccountsTable();
+}
+
+function assignTeacherToClass(uid, clsName) {
+  const member = state.usersMap[uid];
+  if (!member) return;
+  member.assignedClass = clsName;
+  state.usersMap[uid] = member;
+  if (state.user && state.user.uid === uid) state.user = { ...member };
+  saveAndBroadcast("teacher_class");
+  renderAccountsTable();
+}
+
+function renderClassManagerUI() {
+  const box = document.getElementById("cls-rooms-list");
+  if (!box) return;
+  const track = document.getElementById("cls-track-select")?.value || "12";
+  const classes = state.classesMap[track] || [];
+  const allStudents = Object.values(state.usersMap).filter(u => u.role === "student");
+
+  if (!classes.length) {
+    box.innerHTML = `<div class="muted">Chưa có lớp nào trong hạng mục này. Nhập tên lớp phía trên để tạo.</div>`;
+    return;
+  }
+
+  box.innerHTML = classes.map(cls => {
+    const stuChips = cls.students.map(uname => {
+      const stObj = allStudents.find(s => s.username === uname);
+      const label = stObj ? `${stObj.name} (@${uname})` : `@${uname}`;
+      return `<span class="chip chip-primary" style="gap:6px;">${escapeHtml(label)} <button type="button" style="border:none;background:none;color:inherit;cursor:pointer;font-weight:800;" onclick="removeStudentFromClass('${track}', '${cls.id}', '${uname}')">×</button></span>`;
+    }).join("");
+
+    const opts = allStudents.map(s => `<option value="${s.username}">${escapeHtml(s.name)} (@${escapeHtml(s.username)})</option>`).join("");
+
+    return `
+      <div class="scoring-box" style="margin-bottom:0;background:var(--surface-solid);border:1px solid var(--border);">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <strong><i class="fa-solid fa-users-rectangle"></i> Lớp ${escapeHtml(cls.name)} (${cls.students.length} HS)</strong>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <select class="input-sm" onchange="if(this.value){addStudentToClass('${track}', '${cls.id}', this.value); this.value='';}">
+              <option value="">+ Thêm học sinh vào lớp...</option>
+              ${opts}
+            </select>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">${stuChips || `<span class="muted">Chưa có học sinh trong lớp này.</span>`}</div>
+      </div>
+    `;
+  }).join("");
+}
+
 
 async function toggleMemberClassTrack(uid, track, enabled) {
   const member = state.usersMap[uid];
@@ -1089,6 +1278,7 @@ function syncStudentPickerToInput(containerId, inputId) {
 
 // ---------------- ĐIỀU HƯỚNG & DANH SÁCH ĐỀ ----------------
 function switchView(viewId) {
+  try { localStorage.setItem("om_v8_active_view", viewId); } catch (_) {}
   document.querySelectorAll(".view").forEach(v => v.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach(n => n.classList.toggle("active", n.dataset.view === viewId));
   document.getElementById(`view-${viewId}`).classList.add("active");
@@ -1164,7 +1354,7 @@ function refreshAllViews() {
   const totalSetsEl = document.getElementById("stat-total-sets");
   if (totalSetsEl) totalSetsEl.textContent = state.sets.length;
 
-  const emptyMsg = `<div class="panel glass muted" style="grid-column:1/-1;text-align:center;padding:24px;">Chưa có đề thi hoặc bộ luyện đề nào. Giáo viên / Quản trị vào <strong>Quản lý & Ra đề</strong> để tạo đề hoặc tải file Word lên.</div>`;
+  const emptyMsg = `<div class="panel glass muted" style="grid-column:1/-1;text-align:center;padding:18px;">Chưa có đề nào.</div>`;
   document.getElementById("dashboard-exams-list").innerHTML = state.sets.length ? state.sets.slice(0, 6).map(setCardHTML).join("") : emptyMsg;
   renderPracticeCatalog("ALL");
   renderExamCatalog("ALL");
@@ -1542,6 +1732,12 @@ function submitPracticeSession(force = false) {
     fbDb.collection("submissions").doc(sub.id).set(sub).catch(() => {});
   }
   refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
 
   // Cập nhật chấm điểm & hiển thị đúng/sai ngay lập tức trên màn hình hiện tại
   renderPracticeView(false);
@@ -1931,6 +2127,12 @@ function disqualifyExamSession(reason, c, max) {
   actBtn.onclick = exitDisqualifiedExam;
   document.getElementById("anticheat-lock").style.display = "grid";
   refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
 }
 
 async function exitDisqualifiedExam() {
@@ -2001,6 +2203,12 @@ async function confirmSubmitExam(force = false, statusNote = "Hoàn thành") {
   // Hiển thị ngay kết quả kèm toàn bộ chi tiết từng câu đúng/sai và lời giải như Luyện đề
   showSubmissionResultModal(sub);
   refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
 }
 
 function formatUserAnswerSummary(d) {
@@ -2722,6 +2930,8 @@ async function publishParsedExam() {
     },
     questions: JSON.parse(JSON.stringify(state.parsedWordQuestions)),
     essayHTML: state.parsedEssayHTML,
+    organizerName: state.user?.name || "Quản trị viên",
+    organizerRole: state.user?.role || "admin",
     createdAt: Date.now()
   };
 
@@ -2733,6 +2943,12 @@ async function publishParsedExam() {
   document.getElementById("word-preview-area").style.display = "none";
   document.getElementById("word-essay-preview-box").style.display = "none";
   refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
   showToast(`Đã xuất bản "${obj.title}" (${obj.code})`, "success");
 }
 
@@ -2800,6 +3016,12 @@ async function saveSetPermissions(setId) {
   if (isFirebaseLive) await fbDb.collection("exams").doc(s.id).set(s, { merge: true }).catch(() => {});
   closeModal("result-modal");
   refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
   showToast("Đã cập nhật phân quyền", "success");
 }
 
@@ -2810,6 +3032,12 @@ async function deleteSet(setId) {
   saveAndBroadcast("exam");
   if (isFirebaseLive) await fbDb.collection("exams").doc(setId).delete().catch(() => {});
   refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
   showToast("Đã xóa đề", "info");
 }
 
@@ -2820,35 +3048,66 @@ function getUserAvatar(uid) {
 function renderHistory() {
   const curUid = state.user ? state.user.uid : "guest-local";
   const mySubs = state.submissions.filter(s => s.uid === curUid);
-  document.getElementById("history-tbody").innerHTML = mySubs.length ? mySubs.map(s => `
-    <tr>
-      <td><strong>${escapeHtml(s.examTitle)}</strong><div class="muted">${new Date(s.submittedAt).toLocaleString("vi-VN")}</div></td>
-      <td><span class="chip ${s.mode === 'exam' ? 'chip-primary' : 'chip-success'}">${s.mode === "exam" ? "Khảo thí" : "Luyện đề"}</span></td>
-      <td><strong style="color:var(--primary);font-size:15px;">${s.score}</strong></td>
-      <td>
-        <div class="action-cell-group">
-          <button class="btn btn-ghost btn-xs" onclick="openSavedSubmission('${s.id}')"><i class="fa-regular fa-eye"></i> Xem lại</button>
-          ${s.mode === "practice" ? `<button class="btn btn-warning btn-xs" onclick="startPractice('${s.examId}')"><i class="fa-solid fa-wrench"></i> Sửa sai</button>` : ""}
-        </div>
-      </td>
-    </tr>
-  `).join("") : `<tr><td colspan="4" class="muted">Chưa có lịch sử làm bài.</td></tr>`;
+  const histBody = document.getElementById("history-tbody");
+  if (histBody) {
+    histBody.innerHTML = mySubs.length ? mySubs.map(s => `
+      <tr>
+        <td><strong>${escapeHtml(s.examTitle)}</strong><div class="muted">${new Date(s.submittedAt).toLocaleString("vi-VN")}</div></td>
+        <td><span class="chip ${s.mode === 'exam' ? 'chip-primary' : 'chip-success'}">${s.mode === "exam" ? "Khảo thí" : "Luyện đề"}</span></td>
+        <td><strong style="color:var(--primary);font-size:15px;">${s.score}</strong></td>
+        <td>
+          <div class="action-cell-group">
+            <button class="btn btn-ghost btn-xs" onclick="openSavedSubmission('${s.id}')"><i class="fa-regular fa-eye"></i> Xem lại</button>
+            ${s.mode === "practice" ? `<button class="btn btn-warning btn-xs" onclick="startPractice('${s.examId}')"><i class="fa-solid fa-wrench"></i> Sửa sai</button>` : ""}
+          </div>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="4" class="muted">Chưa có lịch sử làm bài.</td></tr>`;
+  }
 
+  const examSubs = state.submissions.filter(s => s.mode === "exam");
+  const lbSelect = document.getElementById("lb-exam-filter");
+  const selectedExamId = lbSelect ? lbSelect.value : "ALL";
+  if (lbSelect) {
+    const examTitlesMap = {};
+    examSubs.forEach(s => { examTitlesMap[s.examId] = s.examTitle; });
+    state.sets.filter(s => s.mode === "exam").forEach(s => { examTitlesMap[s.id] = s.title; });
+    lbSelect.innerHTML = `<option value="ALL">Tất cả kỳ khảo thí</option>` +
+      Object.entries(examTitlesMap).map(([eid, etitle]) =>
+        `<option value="${eid}" ${selectedExamId === eid ? "selected" : ""}>${escapeHtml(etitle)}</option>`
+      ).join("");
+  }
+
+  const filteredExamSubs = selectedExamId === "ALL" ? examSubs : examSubs.filter(s => s.examId === selectedExamId);
   const bestMap = {};
-  state.submissions.forEach(s => {
+  filteredExamSubs.forEach(s => {
+    const key = selectedExamId === "ALL" ? `${s.examId}_${s.uid}` : s.uid;
     const sc = Number(s.score || 0);
-    if (!bestMap[s.uid] || sc > bestMap[s.uid].score) {
-      bestMap[s.uid] = { uid: s.uid, name: (state.usersMap[s.uid]?.name || s.studentName), score: sc };
+    if (!bestMap[key] || sc > bestMap[key].score) {
+      bestMap[key] = {
+        uid: s.uid,
+        name: (state.usersMap[s.uid]?.name || s.studentName),
+        examTitle: s.examTitle,
+        score: sc
+      };
     }
   });
+
   const sorted = Object.values(bestMap).sort((a, b) => b.score - a.score).slice(0, 10);
-  document.getElementById("leaderboard-list").innerHTML = sorted.length ? sorted.map((x, i) => `
-    <div class="lb-item">
-      <div class="lb-rank">${i + 1}</div>
-      <img src="${getUserAvatar(x.uid)}" alt=""/>
-      <strong>${escapeHtml(x.name)}</strong>
-      <div class="lb-score">${x.score} đ</div>
-    </div>`).join("") : `<p class="muted">Chưa có dữ liệu.</p>`;
+  const medals = ["🥇 Nhất", "🥈 Nhì", "🥉 Ba"];
+  const lbBox = document.getElementById("leaderboard-list");
+  if (lbBox) {
+    lbBox.innerHTML = sorted.length ? sorted.map((x, i) => `
+      <div class="lb-item">
+        <div class="lb-rank">${medals[i] || (i + 1)}</div>
+        <img src="${getUserAvatar(x.uid)}" alt=""/>
+        <div style="min-width:0;flex:1;">
+          <strong style="display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(x.name)}</strong>
+          <small class="muted">${escapeHtml(x.examTitle)}</small>
+        </div>
+        <div class="lb-score">${x.score} đ</div>
+      </div>`).join("") : `<p class="muted">Chưa có kết quả khảo thí.</p>`;
+  }
 }
 
 function openSavedSubmission(subId) {
@@ -2859,16 +3118,66 @@ function openSavedSubmission(subId) {
 
 function renderMonitorTable() {
   const tbody = document.getElementById("monitor-tbody");
+  const podBox = document.getElementById("mon-podium-box");
   if (!tbody) return;
-  tbody.innerHTML = state.participants.length ? state.participants.map(p => `
-    <tr>
-      <td><div class="user-cell"><img src="${getUserAvatar(p.uid)}" alt=""/><strong>${escapeHtml(state.usersMap[p.uid]?.name || p.studentName)}</strong></div></td>
-      <td>${escapeHtml(p.examTitle)}</td>
-      <td>Khảo thí</td>
+
+  const examFilterEl = document.getElementById("mon-exam-filter");
+  const curFilter = examFilterEl ? examFilterEl.value : "ALL";
+  const examSets = state.sets.filter(s => s.mode === "exam");
+
+  if (examFilterEl) {
+    examFilterEl.innerHTML = `<option value="ALL">Tất cả cuộc thi</option>` +
+      examSets.map(s => `<option value="${s.id}" ${curFilter === s.id ? "selected" : ""}>${escapeHtml(s.title)}</option>`).join("");
+  }
+
+  const rowsData = curFilter === "ALL"
+    ? state.participants
+    : state.participants.filter(p => p.examId === curFilter);
+
+  const ranked = [...rowsData].sort((a, b) => Number(b.score || 0) - Number(a.score || 0));
+  if (podBox) {
+    if (ranked.length >= 1) {
+      const top3 = ranked.slice(0, 3);
+      const titlesTop = ["🥇 Nhất", "🥈 Nhì", "🥉 Ba"];
+      podBox.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;">` +
+        top3.map((item, idx) => `<span class="chip chip-primary">${titlesTop[idx]}: <strong>${escapeHtml(state.usersMap[item.uid]?.name || item.studentName)}</strong> (${escapeHtml(item.examTitle)} — ${item.score}đ)</span>`).join("") +
+        `</div>`;
+    } else {
+      podBox.innerHTML = "";
+    }
+  }
+
+  const allClasses = Object.values(state.classesMap || {}).flat();
+
+  tbody.innerHTML = rowsData.length ? rowsData.map(p => {
+    const examObj = state.sets.find(s => s.id === p.examId);
+    const organizer = examObj?.organizerName || (state.user?.role === "teacher" ? state.user.name : "Quản trị / Giáo viên");
+    const stuObj = state.usersMap[p.uid];
+    const stuClass = allClasses.find(c => (c.students || []).includes(stuObj?.username || ""))?.name;
+    const subObj = state.submissions.find(sb => sb.examId === p.examId && sb.uid === p.uid);
+
+    return `<tr>
+      <td>
+        <div class="user-cell">
+          <img src="${getUserAvatar(p.uid)}" alt=""/>
+          <div>
+            <strong>${escapeHtml(stuObj?.name || p.studentName)}</strong>
+            ${stuClass ? `<div class="muted">Lớp ${escapeHtml(stuClass)}</div>` : ""}
+          </div>
+        </div>
+      </td>
+      <td><strong>${escapeHtml(p.examTitle)}</strong></td>
+      <td>${escapeHtml(organizer)}</td>
       <td><strong style="color:var(--primary)">${p.score}</strong></td>
       <td>${p.violations}</td>
-      <td><span class="chip ${p.status === 'Bị truất quyền thi' ? 'chip-danger' : 'chip-primary'}">${escapeHtml(p.status)}</span></td>
-    </tr>`).join("") : `<tr><td colspan="6" class="muted">Chưa có thí sinh tham gia.</td></tr>`;
+      <td>
+        <div class="action-cell-group">
+          <span class="chip ${p.status === 'Bị truất quyền thi' ? 'chip-danger' : 'chip-primary'}">${escapeHtml(p.status)}</span>
+          ${subObj ? `<button class="btn btn-ghost btn-xs" onclick="openSavedSubmission('${subObj.id}')"><i class="fa-solid fa-pen-to-square"></i> Xem & Sửa</button>` : ""}
+        </div>
+      </td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="6" class="muted">Chưa có thí sinh tham gia kỳ khảo thí.</td></tr>`;
 }
 
 function compressImageFile(file, maxDim = 1000, quality = 0.82) {
@@ -3443,8 +3752,12 @@ function initTeacherWhiteboardOnce() {
 
     if (wbState.tool === "laser") {
       const curL = wbState.laserStrokes[wbState.laserStrokes.length - 1];
-      if (curL) curL.push(p);
-      renderLaserOverlay(p);
+      if (curL) {
+        const lastLP = curL[curL.length - 1];
+        if (lastLP && Math.hypot(p.x - lastLP.x, p.y - lastLP.y) < 0.8) return;
+        curL.push(p);
+        if (lastLP) drawLaserSegment(wbState.laserCtx, lastLP.x, lastLP.y, p.x, p.y);
+      }
       return;
     }
 
@@ -3849,6 +4162,12 @@ window.addEventListener("DOMContentLoaded", () => {
   applyPreferences();
   renderUserUI();
   refreshAllViews();
+  try {
+    const savedView = localStorage.getItem("om_v8_active_view");
+    if (savedView && document.getElementById("view-" + savedView)) {
+      switchView(savedView);
+    }
+  } catch (_) {}
   initWordDropzone();
   initFirebase();
   setInterval(() => {
