@@ -261,7 +261,12 @@
             </div>
           </section>
           <section class="panel glass">
-            <h3><i class="fa-solid fa-ranking-star"></i> Bảng xếp hạng</h3>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+              <h3><i class="fa-solid fa-ranking-star"></i> Bảng xếp hạng khảo thí</h3>
+              <select id="lb-exam-filter" class="input-sm" onchange="renderHistory()">
+                <option value="ALL">Tất cả kỳ khảo thí</option>
+              </select>
+            </div>
             <div id="leaderboard-list" class="leaderboard-list"></div>
           </section>
         </div>
@@ -477,7 +482,7 @@
         <!-- TAB 3: TÀI KHOẢN & PHÂN LỚP (10, 11, 12, THPTQG, HSG) -->
         <div class="studio-tab" id="studio-tab-accounts">
           <div class="panel glass admin-only" id="admin-create-teacher-box" style="display:none;">
-            <h3><i class="fa-solid fa-user-plus"></i> Tạo tài khoản Giáo viên</h3>
+            <h3><i class="fa-solid fa-user-plus"></i> Tạo tài khoản Giáo viên & Phân hạng mục</h3>
             <form onsubmit="createTeacherAccount(event)" style="margin-top:12px;">
               <div class="form-grid">
                 <div class="field">
@@ -501,10 +506,46 @@
                   <input type="password" id="t-pass" required placeholder="••••••••" />
                 </div>
               </div>
+              <div class="field">
+                <label>Hạng mục giáo viên phụ trách</label>
+                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;">
+                  <label class="stu-pick-chip"><input type="checkbox" class="t-track-chk" value="10" checked /><span>Khối 10</span></label>
+                  <label class="stu-pick-chip"><input type="checkbox" class="t-track-chk" value="11" checked /><span>Khối 11</span></label>
+                  <label class="stu-pick-chip"><input type="checkbox" class="t-track-chk" value="12" checked /><span>Khối 12</span></label>
+                  <label class="stu-pick-chip"><input type="checkbox" class="t-track-chk" value="THPTQG" checked /><span>THPTQG</span></label>
+                  <label class="stu-pick-chip"><input type="checkbox" class="t-track-chk" value="HSG" checked /><span>HSG Tỉnh</span></label>
+                </div>
+              </div>
               <button type="submit" class="btn btn-primary btn-sm">
                 <i class="fa-solid fa-key"></i> Cấp tài khoản Giáo viên
               </button>
             </form>
+          </div>
+
+          <!-- TẠO & QUẢN LÝ LỚP HỌC THEO HẠNG MỤC (10, 11, 12, THPTQG, HSG) -->
+          <div class="panel glass">
+            <h3><i class="fa-solid fa-school"></i> Quản lý lớp học theo hạng mục</h3>
+            <div class="form-grid" style="margin-top:10px;">
+              <div class="field">
+                <label>Hạng mục</label>
+                <select id="cls-track-select" onchange="renderClassManagerUI()">
+                  <option value="10">Khối 10</option>
+                  <option value="11">Khối 11</option>
+                  <option value="12" selected>Khối 12</option>
+                  <option value="THPTQG">Ôn THPTQG</option>
+                  <option value="HSG">Ôn HSG Tỉnh</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Tên lớp mới</label>
+                <input type="text" id="cls-new-name" placeholder="VD: 12A1, 10T1, Đội tuyển..." onkeydown="if(event.key==='Enter'){event.preventDefault();createClassRoom();}" />
+              </div>
+              <div class="field" style="justify-content:flex-end;">
+                <label>&nbsp;</label>
+                <button type="button" class="btn btn-primary btn-sm" onclick="createClassRoom()"><i class="fa-solid fa-plus"></i> Tạo lớp</button>
+              </div>
+            </div>
+            <div id="cls-rooms-list" style="display:flex;flex-direction:column;gap:10px;margin-top:8px;"></div>
           </div>
 
           <div class="panel glass">
@@ -526,11 +567,12 @@
                     <th>Thành viên</th>
                     <th>Tài khoản</th>
                     <th>Vai trò</th>
-                    <th class="col-center">Lớp 10</th>
-                    <th class="col-center">Lớp 11</th>
-                    <th class="col-center">Lớp 12</th>
-                    <th class="col-center">Ôn THPTQG</th>
-                    <th class="col-center">Ôn HSG</th>
+                    <th>Lớp phân công</th>
+                    <th class="col-center">10</th>
+                    <th class="col-center">11</th>
+                    <th class="col-center">12</th>
+                    <th class="col-center">THPTQG</th>
+                    <th class="col-center">HSG</th>
                     <th class="admin-only-col">Quản trị</th>
                   </tr>
                 </thead>
@@ -544,21 +586,27 @@
         <div class="studio-tab" id="studio-tab-monitor">
           <div class="panel glass">
             <div class="section-header" style="margin-top:0;">
-              <h3><i class="fa-solid fa-satellite-dish"></i> Giám sát & Kết quả</h3>
-              <button class="btn btn-success btn-sm" onclick="exportResultsCSV()">
-                <i class="fa-solid fa-file-excel"></i> Xuất CSV
-              </button>
+              <h3><i class="fa-solid fa-satellite-dish"></i> Giám sát & Kết quả khảo thí</h3>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <select id="mon-exam-filter" class="input-sm" onchange="renderMonitorTable()">
+                  <option value="ALL">Tất cả cuộc thi</option>
+                </select>
+                <button class="btn btn-success btn-sm" onclick="exportResultsCSV()">
+                  <i class="fa-solid fa-file-excel"></i> Xuất CSV
+                </button>
+              </div>
             </div>
+            <div id="mon-podium-box" style="margin-bottom:12px;"></div>
             <div class="table-wrap">
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>Học sinh</th>
-                    <th>Đề</th>
-                    <th>Loại</th>
+                    <th>Học sinh & Lớp</th>
+                    <th>Cuộc thi</th>
+                    <th>Người tổ chức</th>
                     <th>Điểm</th>
                     <th>Vi phạm</th>
-                    <th>Trạng thái</th>
+                    <th>Trạng thái & Bài làm</th>
                   </tr>
                 </thead>
                 <tbody id="monitor-tbody"></tbody>
@@ -568,20 +616,7 @@
         </div>
       </main>
 
-      <footer class="om-brand-footer">
-        <div class="om-footer-brand-row">
-          <div class="om-footer-logo-mark">
-            <span class="om-f-blue">ORIGIN</span><span class="om-f-white">MATH</span>
-          </div>
-          <div class="om-footer-tagline">ORIGIN MATH – NỀN TẢNG LUYỆN THI & KHẢO THÍ TOÁN THPT</div>
-          <div class="om-footer-motto">TƯ DUY SÂU • BẢN CHẤT CHUẨN • CHINH PHỤC MỌI KỲ THI</div>
-          <p class="om-footer-desc">Đồng hành cùng học sinh trên con đường chinh phục tri thức Toán học!</p>
-        </div>
-        <div class="om-footer-bottom-bar">
-          <div>Sản phẩm này thuộc bản quyền của <span class="om-copyright-owner">Nguyễn Phúc Nguyên</span></div>
-          
-        </div>
-      </footer>
+      
     </div>
   </div>
 
@@ -971,6 +1006,13 @@
       <input type="range" class="om-slider" min="0" max="26" value="14" oninput="setGlassBlur(this.value)" style="width:100%;" />
     </div>
   </aside>
+
+<footer class="om-full-footer">
+    <div class="om-full-footer-inner">
+      <span class="om-footer-brand">ORIGIN MATH</span>
+      <span class="om-footer-copy">Sản phẩm này thuộc bản quyền của <span class="om-copyright-owner">Nguyễn Phúc Nguyên</span></span>
+    </div>
+  </footer>
 
   <div id="toast-container" class="toast-container"></div>
   <script src="app.js"></script>
