@@ -1025,3 +1025,49 @@ input:checked + .slider:before { transform: translateX(17px); }
   outline: 2px solid #fca5a5 !important;
   box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.35) !important;
 }
+
+/* FOOTER BAO TRỌN TOÀN BỘ TỪ TRÁI SANG PHẢI Ở CUỐI WEB */
+.om-full-footer {
+  width: 100%;
+  margin-top: auto;
+  padding: 15px 24px;
+  background: linear-gradient(90deg, #071326 0%, #0d1f3c 55%, #112a52 100%);
+  color: #f8fafc;
+  border-top: 1px solid rgba(56, 189, 248, 0.25);
+  position: relative;
+  z-index: 30;
+  clear: both;
+}
+.om-full-footer-inner {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.om-footer-brand {
+  font-weight: 900;
+  font-size: 14.5px;
+  letter-spacing: 0.6px;
+  color: #38bdf8;
+}
+.om-footer-copy {
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+/* CHỐNG TRÀN NGANG TRÊN ĐIỆN THOẠI */
+@media (max-width: 640px) {
+  .modal-backdrop { padding: 10px; }
+  .modal-card { max-width: 100%; padding: 14px; border-radius: 14px; }
+  .panel { padding: 12px; border-radius: 12px; }
+  .view { padding: 10px 10px 24px; }
+  .topbar { margin: 8px 8px 0; padding: 7px 10px; }
+  .search-box { width: 118px; padding: 5px 9px; }
+  .hero-content h1 { font-size: 17px; }
+  .data-table th, .data-table td { padding: 8px 9px; font-size: 12px; }
+  .om-full-footer { padding: 14px 14px; }
+  .om-full-footer-inner { flex-direction: column; align-items: flex-start; gap: 6px; }
+}
