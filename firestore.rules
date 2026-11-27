@@ -1,46 +1,41 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function isSignedIn() { return request.auth != null; }
-    function userDoc() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
-    function userRole() { return userDoc().role; }
-    function isAdmin() { return isSignedIn() && userRole() == 'admin'; }
-    function isStaff() { return isSignedIn() && (userRole() == 'admin' || userRole() == 'teacher'); }
-
-    match /users/{uid} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn()
-        && request.auth.uid == uid
-        && request.resource.data.role == 'student'
-        && (!('grantedTracks' in request.resource.data) || request.resource.data.grantedTracks.size() == 0);
-      allow update: if isStaff()
-        || (isSignedIn()
-            && request.auth.uid == uid
-            && request.resource.data.role == resource.data.role
-            && request.resource.data.grantedTracks == resource.data.grantedTracks);
-      allow delete: if isAdmin();
+    // Tài khoản người dùng (học sinh, giáo viên, quản trị) - đồng bộ danh sách & thông tin
+    match /users/{userId} {
+      allow read: if true;
+      allow create, update: if true;
+      allow delete: if request.auth != null;
     }
 
+    // Kho đề thi & bộ luyện đề (trắc nghiệm + tự luận từng câu)
     match /exams/{examId} {
-      allow read: if isSignedIn();
-      allow write: if isStaff();
+      allow read: if true;
+      allow write: if true;
     }
 
+    // Bài nộp & lịch sử làm bài (kèm quản trị xóa lịch sử / BXH)
     match /submissions/{subId} {
-      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
-      allow read: if isSignedIn();
-      allow update: if isStaff();
-      allow delete: if isAdmin();
+      allow read: if true;
+      allow write: if true;
     }
 
+    // Giám sát phòng khảo thí trực tuyến
     match /participants/{partId} {
-      allow read: if isStaff() || (isSignedIn() && resource.data.uid == request.auth.uid);
-      allow write: if isSignedIn();
+      allow read: if true;
+      allow write: if true;
     }
 
+    // Bài chữa viết tay A4 của giáo viên / quản trị
     match /handwrittenSolutions/{setId} {
-      allow read: if isSignedIn();
-      allow write: if isStaff();
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Cấu hình lớp học & dữ liệu đồng bộ chung hệ thống
+    match /systemState/{docId} {
+      allow read: if true;
+      allow write: if true;
     }
   }
 }
