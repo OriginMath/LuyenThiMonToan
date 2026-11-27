@@ -243,14 +243,24 @@
 
       <!-- VIEW 4: LỊCH SỬ & XẾP HẠNG -->
       <main class="view" id="view-history">
-        <div class="two-col-grid">
-          <section class="panel glass">
-            <h3><i class="fa-solid fa-clock-rotate-left"></i> Lịch sử làm bài</h3>
+        <div class="two-col-grid history-responsive-grid">
+          <section class="panel glass" style="min-width:0;overflow:hidden;">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+              <h3><i class="fa-solid fa-clock-rotate-left"></i> Lịch sử làm bài</h3>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                <select id="hist-student-filter" class="input-sm admin-only" style="display:none;" onchange="renderHistory()">
+                  <option value="ALL">Tất cả học sinh</option>
+                </select>
+                <button type="button" class="btn btn-danger btn-xs admin-only" style="display:none;" onclick="adminClearAllSubmissions()">
+                  <i class="fa-solid fa-trash"></i> Xóa tất cả lịch sử
+                </button>
+              </div>
+            </div>
             <div class="table-wrap">
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>Đề</th>
+                    <th>Đề / Học sinh</th>
                     <th>Loại</th>
                     <th>Điểm</th>
                     <th>Thao tác</th>
@@ -260,12 +270,17 @@
               </table>
             </div>
           </section>
-          <section class="panel glass">
+          <section class="panel glass" style="min-width:0;overflow:hidden;">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
               <h3><i class="fa-solid fa-ranking-star"></i> Bảng xếp hạng khảo thí</h3>
-              <select id="lb-exam-filter" class="input-sm" onchange="renderHistory()">
-                <option value="ALL">Tất cả kỳ khảo thí</option>
-              </select>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+                <select id="lb-exam-filter" class="input-sm" onchange="renderHistory()">
+                  <option value="ALL">Tất cả kỳ khảo thí</option>
+                </select>
+                <button type="button" class="btn btn-danger btn-xs admin-only" style="display:none;" onclick="adminClearExamLeaderboard()">
+                  <i class="fa-solid fa-broom"></i> Xóa BXH
+                </button>
+              </div>
             </div>
             <div id="leaderboard-list" class="leaderboard-list"></div>
           </section>
@@ -398,6 +413,13 @@
               </div>
             </div>
 
+            <div class="field" style="margin-bottom:10px;">
+              <label>Gán lớp học cụ thể cho đề này (tùy chọn)</label>
+              <select id="st-target-class">
+                <option value="ALL">Tất cả học sinh thuộc Khối / Chương trình đã chọn</option>
+              </select>
+            </div>
+
             <div id="st-whitelist-box" class="scoring-box" style="display:none; margin-bottom:12px;">
               <strong>Chọn học sinh được vào phòng</strong>
               <input type="text" id="st-whitelist-input" class="input-sm" style="width:100%;margin:8px 0;" placeholder="Tên đăng nhập cách nhau dấu phẩy..." />
@@ -481,6 +503,18 @@
 
         <!-- TAB 3: TÀI KHOẢN & PHÂN LỚP (10, 11, 12, THPTQG, HSG) -->
         <div class="studio-tab" id="studio-tab-accounts">
+          <div class="panel glass admin-only" id="admin-system-reset-box" style="display:none;border:1.5px solid var(--danger);">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+              <div>
+                <h3 style="color:var(--danger);"><i class="fa-solid fa-triangle-exclamation"></i> Quản trị tối cao & Làm mới hệ thống</h3>
+                <p class="muted" style="margin-top:4px;">Xóa sạch toàn bộ dữ liệu bộ nhớ đệm, tài khoản thử nghiệm cũ, lịch sử thi và đưa website về trạng thái ban đầu 100%.</p>
+              </div>
+              <button type="button" class="btn btn-danger" onclick="adminFullSystemReset()">
+                <i class="fa-solid fa-rotate"></i> RESET TOÀN BỘ WEB BẮT ĐẦU LẠI TỪ ĐẦU 100%
+              </button>
+            </div>
+          </div>
+
           <div class="panel glass admin-only" id="admin-create-teacher-box" style="display:none;">
             <h3><i class="fa-solid fa-user-plus"></i> Tạo tài khoản Giáo viên & Phân hạng mục</h3>
             <form onsubmit="createTeacherAccount(event)" style="margin-top:12px;">
@@ -1003,14 +1037,19 @@
 
     <div class="drawer-section">
       <label class="drawer-label">Độ mờ kính: <span id="blur-val">14px</span></label>
-      <input type="range" class="om-slider" min="0" max="26" value="14" oninput="setGlassBlur(this.value)" style="width:100%;" />
+      <input type="range" class="om-slider" id="pref-blur-slider" min="0" max="26" value="14" oninput="setGlassBlur(this.value)" onchange="setGlassBlur(this.value)" style="width:100%;" />
     </div>
   </aside>
 
 <footer class="om-full-footer">
     <div class="om-full-footer-inner">
-      <span class="om-footer-brand">ORIGIN MATH</span>
-      <span class="om-footer-copy">Sản phẩm này thuộc bản quyền của <span class="om-copyright-owner">Nguyễn Phúc Nguyên</span></span>
+      <div class="om-footer-left-block">
+        <div class="om-footer-brand"><span class="om-f-blue">ORIGIN</span><span class="om-f-white">MATH</span></div>
+        <div class="om-footer-tagline">ORIGIN MATH – NỀN TẢNG LUYỆN THI & KHẢO THÍ TOÁN THPT</div>
+        <div class="om-footer-motto">TƯ DUY SÂU • BẢN CHẤT CHUẨN • CHINH PHỤC MỌI KỲ THI</div>
+        <p class="om-footer-desc">Đồng hành cùng học sinh trên con đường chinh phục tri thức Toán học!</p>
+      </div>
+      <div class="om-footer-copy">Sản phẩm này thuộc bản quyền của <span class="om-copyright-owner">Nguyễn Phúc Nguyên</span></div>
     </div>
   </footer>
 
