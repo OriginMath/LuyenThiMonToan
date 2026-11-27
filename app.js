@@ -264,6 +264,9 @@ function saveAndBroadcast(type = "sync") {
   } catch (err) {
     console.warn("Storage warning:", err);
   }
+  if (isFirebaseLive && fbDb && ["class_create", "class_student_add", "class_student_rm", "class_delete", "teacher_class"].includes(type)) {
+    fbDb.collection("systemState").doc("classes").set({ classesMap: state.classesMap, updatedAt: Date.now() }, { merge: true }).catch(() => {});
+  }
   if (syncChannel) syncChannel.postMessage({ type, ts: Date.now() });
 }
 
@@ -337,6 +340,16 @@ function initFirebase() {
     fbDb.collection("participants").onSnapshot((snap) => {
       state.participants = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderMonitorTable();
+    });
+
+    fbDb.collection("systemState").doc("classes").onSnapshot((doc) => {
+      if (doc.exists && doc.data()?.classesMap) {
+        state.classesMap = doc.data().classesMap;
+        localStorage.setItem("om_v8_classes_map", JSON.stringify(state.classesMap));
+        renderClassManagerUI();
+        renderAccountsTable();
+        populateTargetClassDropdown();
+      }
     });
 
     fbDb.collection("handwrittenSolutions").onSnapshot((snap) => {
@@ -769,8 +782,10 @@ async function handleAuthSubmit(e) {
   const password = document.getElementById("auth-password").value;
 
   if (state.authMode === "register") {
-    if (!USERNAME_REGEX.test(rawUser)) return showToast("Tên người dùng chỉ gồm a-z, 0-9, _ (4-24 ký tự).", "error");
-    const username = rawUser;
+    if (!USERNAME_REGEX.test(rawUser.trim().toLowerCase())) {
+      return showToast("Tên người dùng chỉ gồm a-z, 0-9, _ (4-24 ký tự).", "error");
+    }
+    const username = rawUser.trim().toLowerCase();
     const name = document.getElementById("reg-fullname").value.trim();
     const grade = document.getElementById("reg-grade").value;
     const gender = document.getElementById("reg-gender").value;
@@ -778,42 +793,35 @@ async function handleAuthSubmit(e) {
     if (!name || !dob) return showToast("Vui lòng nhập đầy đủ thông tin!", "warn");
     if (password.length < 6) return showToast("Mật khẩu tối thiểu 6 ký tự!", "warn");
 
-    const dup = Object.values(state.usersMap).some(u => u.username === username);
+    const dup = Object.values(state.usersMap).some(u => (u.username || "").toLowerCase() === username);
     if (dup) return showToast("Tên người dùng đã tồn tại!", "error");
     const hU = await CryptoEngine.pbkdf2Hex(username, _OM_VAULT.s1, _OM_VAULT.it);
     if (CryptoEngine.constantTimeEq(hU, _OM_VAULT.u)) return showToast("Tên người dùng đã được sử dụng!", "error");
 
     const avatar = getDefaultAvatar(gender);
-    if (isFirebaseLive) {
+    const passHash = await CryptoEngine.pbkdf2Hex(`${username}::${password}`, _OM_VAULT.s2, 1000);
+    const uid = "stu-" + username;
+    const profile = {
+      uid, name, username, grade, gender, dob,
+      role: "student", grantedTracks: [], avatar, passHash,
+      createdAt: Date.now()
+    };
+
+    if (isFirebaseLive && fbDb) {
       try {
-        const cred = await fbAuth.createUserWithEmailAndPassword(`${username}@originmath.local`, password);
-        const profile = { uid: cred.user.uid, name, username, grade, gender, dob, role: "student", grantedTracks: [], avatar, organizerName: state.user?.name || "Quản trị viên",
-    organizerRole: state.user?.role || "admin",
-    createdAt: Date.now() };
-        await fbDb.collection("users").doc(cred.user.uid).set(profile);
-        closeModal("auth-modal");
-        showToast("Đăng ký thành công!", "success");
-      } catch (err) { showToast("Lỗi: " + err.message, "error"); }
-      return;
+        await fbDb.collection("users").doc(uid).set(profile, { merge: true });
+      } catch (err) {
+        console.warn("Firestore register sync:", err);
+      }
     }
 
-    const uid = "stu-" + username;
-    const passHash = await CryptoEngine.pbkdf2Hex(`${username}::${password}`, _OM_VAULT.s2, 1000);
-    const profile = { uid, name, username, grade, gender, dob, role: "student", grantedTracks: [], avatar, passHash, organizerName: state.user?.name || "Quản trị viên",
-    organizerRole: state.user?.role || "admin",
-    createdAt: Date.now() };
     state.usersMap[uid] = profile;
     state.user = profile;
-    saveAndBroadcast("user");
-    renderUserUI(); refreshAllViews();
-  try {
-    const savedView = localStorage.getItem("om_v8_active_view");
-    if (savedView && document.getElementById("view-" + savedView)) {
-      switchView(savedView);
-    }
-  } catch (_) {}
+    saveAndBroadcast("user_register");
+    renderUserUI();
+    refreshAllViews();
     closeModal("auth-modal");
-    showToast(`Chào mừng ${name}!`, "success");
+    showToast(`Đăng ký thành công! Chào mừng ${name}!`, "success");
     return;
   }
 
@@ -823,44 +831,50 @@ async function handleAuthSubmit(e) {
   if (await verifyVaultAdmin(username, password)) {
     const adminProfile = state.usersMap["admin-root"] || {
       uid: "admin-root", name: "Quản trị viên", username,
-      grade: "", gender: "Nam", dob: "", role: "admin", grantedTracks: ["10", "11", "12", "THPTQG", "HSG"], avatar: getDefaultAvatar("Nam")
+      grade: "", gender: "Nam", dob: "", role: "admin",
+      grantedTracks: ["10", "11", "12", "THPTQG", "HSG"], avatar: getDefaultAvatar("Nam")
     };
     state.usersMap["admin-root"] = adminProfile;
     state.user = adminProfile;
-    saveAndBroadcast("user");
-    renderUserUI(); refreshAllViews();
-  try {
-    const savedView = localStorage.getItem("om_v8_active_view");
-    if (savedView && document.getElementById("view-" + savedView)) {
-      switchView(savedView);
-    }
-  } catch (_) {}
+    saveAndBroadcast("user_login");
+    renderUserUI();
+    refreshAllViews();
     closeModal("auth-modal");
     showToast("Đăng nhập Quản trị viên (Toàn quyền hệ thống)!", "success");
     return;
   }
 
-  if (isFirebaseLive) {
+  const digest = await CryptoEngine.pbkdf2Hex(`${username}::${password}`, _OM_VAULT.s2, 1000);
+
+  // Đồng bộ kiểm tra trực tiếp trên Cloud Firestore nếu đang kết nối (giúp đăng nhập trên thiết bị mới tức thì 100%)
+  if (isFirebaseLive && fbDb) {
     try {
-      await fbAuth.signInWithEmailAndPassword(`${username}@originmath.local`, password);
-      closeModal("auth-modal");
-      showToast("Đăng nhập thành công!", "success");
-    } catch (_) { showToast("Sai tên người dùng hoặc mật khẩu!", "error"); }
-    return;
+      const snap = await fbDb.collection("users").where("username", "==", username).limit(1).get();
+      if (!snap.empty) {
+        const docData = snap.docs[0].data();
+        if (docData.passHash && docData.passHash === digest) {
+          const syncedUser = { uid: snap.docs[0].id, ...docData };
+          state.usersMap[syncedUser.uid] = syncedUser;
+          state.user = syncedUser;
+          saveAndBroadcast("user_login");
+          renderUserUI();
+          refreshAllViews();
+          closeModal("auth-modal");
+          showToast("Chào mừng " + syncedUser.name, "success");
+          return;
+        }
+      }
+    } catch (_) {}
   }
 
-  const digest = await CryptoEngine.pbkdf2Hex(`${username}::${password}`, _OM_VAULT.s2, 1000);
-  const found = Object.values(state.usersMap).find(u => u.username === username && u.passHash === digest);
+  const found = Object.values(state.usersMap).find(
+    u => (u.username || "").toLowerCase() === username && u.passHash === digest
+  );
   if (!found) return showToast("Sai tên người dùng hoặc mật khẩu!", "error");
   state.user = found;
-  saveAndBroadcast("user");
-  renderUserUI(); refreshAllViews();
-  try {
-    const savedView = localStorage.getItem("om_v8_active_view");
-    if (savedView && document.getElementById("view-" + savedView)) {
-      switchView(savedView);
-    }
-  } catch (_) {}
+  saveAndBroadcast("user_login");
+  renderUserUI();
+  refreshAllViews();
   closeModal("auth-modal");
   showToast("Chào mừng " + state.user.name, "success");
 }
@@ -987,6 +1001,13 @@ function canAccessSet(set, user = state.user) {
   const whitelist = (set.allowedStudents || []).map(x => String(x).toLowerCase());
   const tracks = user.grantedTracks || [];
 
+  if (set.targetClass && set.targetClass !== "ALL") {
+    const allCls = Object.values(state.classesMap || {}).flat();
+    const targetC = allCls.find(c => c.name === set.targetClass);
+    if (targetC && !(targetC.students || []).includes(uname)) {
+      return { allowed: false, reason: `Dành riêng cho Lớp ${set.targetClass}` };
+    }
+  }
   if (set.accessMode === "whitelist") {
     return whitelist.includes(uname) ? { allowed: true, reason: "" } : { allowed: false, reason: "Chưa được cấp quyền vào phòng này" };
   }
@@ -1128,6 +1149,8 @@ function createClassRoom() {
 }
 
 function addStudentToClass(track, clsId, stuUsername) {
+  const clsCheck = (state.classesMap[track] || []).find(c => c.id === clsId);
+  if (!canManageTrackOrClass(track, clsCheck)) return showToast("Bạn không được phân quyền quản lý lớp này!", "error");
   if (!stuUsername) return;
   const list = state.classesMap[track] || [];
   const cls = list.find(c => c.id === clsId);
@@ -1139,6 +1162,8 @@ function addStudentToClass(track, clsId, stuUsername) {
 }
 
 function removeStudentFromClass(track, clsId, stuUsername) {
+  const clsCheck = (state.classesMap[track] || []).find(c => c.id === clsId);
+  if (!canManageTrackOrClass(track, clsCheck)) return showToast("Bạn không được phân quyền quản lý lớp này!", "error");
   const list = state.classesMap[track] || [];
   const cls = list.find(c => c.id === clsId);
   if (!cls) return;
@@ -1158,23 +1183,66 @@ function assignTeacherToClass(uid, clsName) {
   renderAccountsTable();
 }
 
+function canManageTrackOrClass(track, clsObj = null) {
+  if (!state.user) return false;
+  if (state.user.role === "admin") return true;
+  if (state.user.role === "teacher") {
+    const hasTrack = (state.user.grantedTracks || []).includes(track);
+    if (!clsObj) return hasTrack;
+    if (state.user.assignedClass) return state.user.assignedClass === clsObj.name;
+    return hasTrack;
+  }
+  return false;
+}
+
+function deleteClassRoom(track, clsId) {
+  const list = state.classesMap[track] || [];
+  const cls = list.find(c => c.id === clsId);
+  if (!cls) return;
+  if (!canManageTrackOrClass(track, cls)) {
+    return showToast("Bạn không có quyền xóa lớp này!", "error");
+  }
+  if (!confirm(`Giải tán và xóa lớp "${cls.name}"?`)) return;
+  state.classesMap[track] = list.filter(c => c.id !== clsId);
+  saveAndBroadcast("class_delete");
+  renderClassManagerUI();
+  renderAccountsTable();
+  populateTargetClassDropdown();
+  showToast(`Đã giải tán lớp ${cls.name}`, "info");
+}
+
+function populateTargetClassDropdown() {
+  const sel = document.getElementById("st-target-class");
+  if (!sel) return;
+  const allClasses = Object.entries(state.classesMap || {}).flatMap(([tr, arr]) =>
+    (arr || []).map(c => ({ track: tr, name: c.name }))
+  );
+  sel.innerHTML = `<option value="ALL">Tất cả học sinh thuộc Khối / Chương trình đã chọn</option>` +
+    allClasses.map(c => `<option value="${escapeHtml(c.name)}">Chỉ lớp ${escapeHtml(c.name)} (${gradeBadgeLabel(c.track)})</option>`).join("");
+}
+
 function renderClassManagerUI() {
   const box = document.getElementById("cls-rooms-list");
   if (!box) return;
   const track = document.getElementById("cls-track-select")?.value || "12";
   const classes = state.classesMap[track] || [];
   const allStudents = Object.values(state.usersMap).filter(u => u.role === "student");
+  populateTargetClassDropdown();
 
   if (!classes.length) {
-    box.innerHTML = `<div class="muted">Chưa có lớp nào trong hạng mục này. Nhập tên lớp phía trên để tạo.</div>`;
+    box.innerHTML = `<div class="muted">Chưa có lớp nào trong hạng mục này.</div>`;
     return;
   }
 
   box.innerHTML = classes.map(cls => {
+    const canEdit = canManageTrackOrClass(track, cls);
     const stuChips = cls.students.map(uname => {
       const stObj = allStudents.find(s => s.username === uname);
       const label = stObj ? `${stObj.name} (@${uname})` : `@${uname}`;
-      return `<span class="chip chip-primary" style="gap:6px;">${escapeHtml(label)} <button type="button" style="border:none;background:none;color:inherit;cursor:pointer;font-weight:800;" onclick="removeStudentFromClass('${track}', '${cls.id}', '${uname}')">×</button></span>`;
+      const rmBtn = canEdit
+        ? `<button type="button" style="border:none;background:none;color:inherit;cursor:pointer;font-weight:800;" onclick="removeStudentFromClass('${track}', '${cls.id}', '${uname}')" title="Xóa khỏi lớp">×</button>`
+        : "";
+      return `<span class="chip chip-primary" style="gap:6px;">${escapeHtml(label)} ${rmBtn}</span>`;
     }).join("");
 
     const opts = allStudents.map(s => `<option value="${s.username}">${escapeHtml(s.name)} (@${escapeHtml(s.username)})</option>`).join("");
@@ -1183,12 +1251,17 @@ function renderClassManagerUI() {
       <div class="scoring-box" style="margin-bottom:0;background:var(--surface-solid);border:1px solid var(--border);">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
           <strong><i class="fa-solid fa-users-rectangle"></i> Lớp ${escapeHtml(cls.name)} (${cls.students.length} HS)</strong>
-          <div style="display:flex;gap:6px;align-items:center;">
-            <select class="input-sm" onchange="if(this.value){addStudentToClass('${track}', '${cls.id}', this.value); this.value='';}">
-              <option value="">+ Thêm học sinh vào lớp...</option>
-              ${opts}
-            </select>
-          </div>
+          ${canEdit ? `
+            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+              <select class="input-sm" onchange="if(this.value){addStudentToClass('${track}', '${cls.id}', this.value); this.value='';}">
+                <option value="">+ Thêm học sinh vào lớp...</option>
+                ${opts}
+              </select>
+              <button type="button" class="btn btn-danger btn-xs" onclick="deleteClassRoom('${track}', '${cls.id}')" title="Giải tán lớp">
+                <i class="fa-solid fa-trash"></i> Xóa lớp
+              </button>
+            </div>
+          ` : `<span class="muted">Chỉ giáo viên phụ trách / Quản trị được chỉnh sửa</span>`}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">${stuChips || `<span class="muted">Chưa có học sinh trong lớp này.</span>`}</div>
       </div>
@@ -1286,8 +1359,10 @@ function switchView(viewId) {
   if (viewId === "studio") {
     renderMonitorTable();
     renderAccountsTable();
+    renderClassManagerUI();
     renderManageSetsTable();
     renderStudentPicker("st-student-picker", []);
+    populateTargetClassDropdown();
   }
   if (viewId === "history") renderHistory();
 }
@@ -1407,6 +1482,9 @@ function sanitizeShortInput(el) {
 }
 
 function evaluateAnyQuestion(q, ua, sc) {
+  if (q.part === 4) {
+    return { isCorrect: true, earned: 0, rightCount: 0, isEssay: true };
+  }
   if (q.part === 1) {
     const ok = ua === q.answer;
     return { isCorrect: ok, earned: ok ? (sc.p1 || 0.25) : 0, rightCount: ok ? 1 : 0 };
@@ -1515,7 +1593,7 @@ function renderPracticeView(animatePage = false) {
     stage.classList.add("q-stage-anim");
   }
 
-  const partNames = { 1: "Phần I: Trắc nghiệm 4 phương án", 2: "Phần II: Đúng / Sai", 3: "Phần III: Trả lời ngắn" };
+  const partNames = { 1: "Phần I: Trắc nghiệm 4 phương án", 2: "Phần II: Đúng / Sai", 3: "Phần III: Trả lời ngắn", 4: "Phần IV: Tự luận (Không tính điểm)" };
   const q = qs[ps.idx];
   document.getElementById("prac-active-sub").textContent = `Câu ${ps.idx + 1}/${qs.length} • ${partNames[q.part] || ""}`;
   document.getElementById("prac-q-timer").textContent = fmtMMSS(ps.qTimes[q.id] || 0);
@@ -1545,6 +1623,9 @@ function renderSinglePracticeQuestionHTML(q, i) {
   let bodyHTML = "";
   let feedbackHTML = "";
 
+  if (q.part === 4) {
+    return { isCorrect: true, earned: 0, rightCount: 0, isEssay: true };
+  }
   if (q.part === 1) {
     bodyHTML = `<div class="options-grid">
       ${q.options.map((o, oi) => {
@@ -1593,6 +1674,11 @@ function renderSinglePracticeQuestionHTML(q, i) {
     }).join("");
     if (isSub) {
       feedbackHTML = `<div class="chip ${evalRes.isCorrect ? 'chip-success' : 'chip-warn'}" style="margin-top:10px;">Đạt ${evalRes.earned}đ (${evalRes.rightCount}/4 ý đúng)</div>`;
+    }
+  } else if (q.part === 4) {
+    bodyHTML = `<div class="zalo-note"><i class="fa-solid fa-pen-fancy"></i> Câu hỏi tự luận (không tính điểm trên hệ thống). Học sinh làm ra giấy và đối chiếu bài chữa bảng A4 phía dưới.</div>`;
+    if (isSub) {
+      feedbackHTML = `<div class="chip chip-primary" style="margin-top:10px;"><i class="fa-solid fa-circle-info"></i> Câu tự luận (không tính điểm)</div>`;
     }
   } else {
     bodyHTML = `<div class="short-input-wrap">
@@ -1685,9 +1771,8 @@ function submitPracticeSession(force = false) {
     const res = evaluatePracticeQuestion(q);
     ps.scores[q.id] = res.earned;
     total += res.earned;
-    maxP += q.part === 1 ? (sc.p1 || 0.25) : q.part === 2 ? (sc.p2 || 1.0) : (sc.p3 || 0.5);
-    if (res.isCorrect) okCnt++;
-    else wrongQs.push(q);
+    if (q.part !== 4) maxP += q.part === 1 ? (sc.p1 || 0.25) : q.part === 2 ? (sc.p2 || 1.0) : (sc.p3 || 0.5);
+    if (q.part !== 4) { if (res.isCorrect) okCnt++; else wrongQs.push(q); }
     return {
       q,
       ua: ps.answers[q.id] !== undefined ? JSON.parse(JSON.stringify(ps.answers[q.id])) : null,
@@ -1846,7 +1931,7 @@ function renderExamSinglePage(animatePage = false) {
   const ses = state.examSession;
   const qs = ses.questions;
   const idx = ses.activeIdx;
-  const titles = { 1: "PHẦN I. Trắc nghiệm nhiều phương án", 2: "PHẦN II. Đúng / Sai", 3: "PHẦN III. Trả lời ngắn" };
+  const titles = { 1: "PHẦN I. Trắc nghiệm — Nhiều phương án", 2: "PHẦN I. Trắc nghiệm — Đúng / Sai", 3: "PHẦN I. Trắc nghiệm — Trả lời ngắn", 4: "PHẦN II. Tự luận (Không tính điểm)" };
 
   let qCardHtml = "";
   if (qs.length) {
@@ -1855,7 +1940,10 @@ function renderExamSinglePage(animatePage = false) {
     const flagged = !!ses.flags[q.id];
     let inputHTML = "";
 
-    if (q.part === 1) {
+    if (q.part === 4) {
+    return { isCorrect: true, earned: 0, rightCount: 0, isEssay: true };
+  }
+  if (q.part === 1) {
       inputHTML = `<div class="options-grid">
         ${q.options.map((opt, oi) => {
           const isSel = saved === oi;
@@ -1878,6 +1966,8 @@ function renderExamSinglePage(animatePage = false) {
           </div>
         </div>`;
       }).join("");
+    } else if (q.part === 4) {
+      inputHTML = `<div class="zalo-note"><i class="fa-solid fa-pen-fancy"></i> Phần II: Câu hỏi tự luận (không tính điểm tự động). Thí sinh trình bày ra giấy thi.</div>`;
     } else {
       inputHTML = `<div class="short-input-wrap">
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
@@ -2163,7 +2253,7 @@ async function confirmSubmitExam(force = false, statusNote = "Hoàn thành") {
   const details = ses.questions.map(q => {
     const ua = ses.answers[q.id];
     const res = evaluateAnyQuestion(q, ua, sc);
-    maxP += q.part === 1 ? (sc.p1 || 0.25) : q.part === 2 ? (sc.p2 || 1.0) : (sc.p3 || 0.5);
+    if (q.part !== 4) maxP += q.part === 1 ? (sc.p1 || 0.25) : q.part === 2 ? (sc.p2 || 1.0) : (sc.p3 || 0.5);
     total += res.earned;
     return {
       q,
@@ -2213,6 +2303,9 @@ async function confirmSubmitExam(force = false, statusNote = "Hoàn thành") {
 
 function formatUserAnswerSummary(d) {
   const q = d.q, ua = d.ua;
+  if (q.part === 4) {
+    return { isCorrect: true, earned: 0, rightCount: 0, isEssay: true };
+  }
   if (q.part === 1) {
     const uStr = ua !== null && ua !== undefined ? `<strong>${"ABCD"[ua]}</strong>` : `<span class="muted">Bỏ trống</span>`;
     const cStr = `<strong>${"ABCD"[q.answer]}</strong>`;
@@ -2250,7 +2343,10 @@ function showSubmissionResultModal(sub) {
     html += details.map((d, i) => {
       const q = d.q;
       let optionsBreakdown = "";
-      if (q.part === 1) {
+      if (q.part === 4) {
+    return { isCorrect: true, earned: 0, rightCount: 0, isEssay: true };
+  }
+  if (q.part === 1) {
         optionsBreakdown = `<div class="options-grid" style="margin-bottom:10px;">
           ${q.options.map((opt, oi) => {
             const isCorrectOpt = oi === q.answer;
@@ -2351,7 +2447,10 @@ function renderParsedWordEditor() {
     let ansCtrl = "";
     let bodyEditor = "";
 
-    if (q.part === 1) {
+    if (q.part === 4) {
+    return { isCorrect: true, earned: 0, rightCount: 0, isEssay: true };
+  }
+  if (q.part === 1) {
       ansCtrl = `<select class="input-sm" onchange="state.parsedWordQuestions[${i}].answer=Number(this.value)">
         ${["A", "B", "C", "D"].map((ch, oi) => `<option value="${oi}" ${q.answer === oi ? "selected" : ""}>Đáp án đúng: ${ch}</option>`).join("")}
       </select>`;
@@ -2432,6 +2531,7 @@ const OriginWordEngine = (() => {
     if (h >= 75 && h <= 165) return "green";
     if (h >= 5 && h <= 58) return "orange";
     if (h >= 180 && h <= 260) return "blue";
+    if (h >= 270 && h <= 355) return "essay";
     return "other";
   }
 
@@ -2622,15 +2722,15 @@ const OriginWordEngine = (() => {
           continue;
         }
         const rowColors = rows.map(getRowFillColor);
-        if (rowColors.some(c => c === "green" || c === "orange" || c === "blue")) {
+        if (rowColors.some(c => c === "green" || c === "orange" || c === "blue" || c === "essay")) {
           colorTableFound = true;
           let i = 0;
           while (i < rows.length) {
             const col = rowColors[i];
-            if (col === "green" || col === "orange" || col === "blue") {
+            if (col === "green" || col === "orange" || col === "blue" || col === "essay") {
               const qRow = getRowContent(rows[i], mediaMap);
               let qHtml = qRow.cells.length >= 2 && (!qRow.texts[0] || /^Câu\s*\d*/i.test(qRow.texts[0])) ? qRow.cells[1] : qRow.cells.filter(Boolean).join(" ");
-              qHtml = qHtml.replace(/^(<[^>]+>)*\s*Câu\s*\d+\s*[:.]?\s*/i, "").replace(/<\/?span[^>]*>/g, "").trim();
+              qHtml = qHtml.replace(/^(<[^>]+>)*\s*(?:Câu|Tự\s*luận|Bài)\s*\d+\s*[:.]?\s*/i, "").replace(/<\/?span[^>]*>/g, "").trim();
 
               const subRows = [];
               let j = i + 1;
@@ -2666,8 +2766,10 @@ const OriginWordEngine = (() => {
                 });
                 while (stmts.length < 4) stmts.push({ label: labels[stmts.length], text: "", answer: false });
                 questions.push({ id: "wq-" + (questions.length + 1), part: 2, text: qHtml, statements: stmts, solution: solHtml });
-              } else {
+              } else if (col === "blue") {
                 questions.push({ id: "wq-" + (questions.length + 1), part: 3, text: qHtml, answer: normalizeShortAns(ansRaw), solution: solHtml });
+              } else {
+                questions.push({ id: "wq-" + (questions.length + 1), part: 4, text: qHtml, answer: "", solution: solHtml });
               }
             } else i++;
           }
@@ -2731,7 +2833,7 @@ const OriginWordEngine = (() => {
         continue;
       }
 
-      if (/PHẦN\s*TỰ\s*LUẬN|II\.\s*TỰ\s*LUẬN/i.test(p)) { flushCur(); inEssay = true; continue; }
+      if (/PHẦN\s*TỰ\s*LUẬN|II\.\s*TỰ\s*LUẬN/i.test(p)) { flushCur(); part = 4; continue; }
       if (inEssay) { essay.push(`<p>${raw.replace(/<\/?span[^>]*>/g, "")}</p>`); continue; }
       if (/^\[?PH[ẦA]N\s*(1|I)\b/i.test(p)) { flushCur(); part = 1; continue; }
       if (/^\[?PH[ẦA]N\s*(2|II)\b/i.test(p)) { flushCur(); part = 2; continue; }
@@ -2852,7 +2954,7 @@ function removeParsedQ(i) {
   }
 }
 
-async function downloadColorWordTemplate(withEssay = false) {
+async function downloadColorWordTemplate(withEssay = true) {
   if (!window.docx) return showToast("Đang tải thư viện xuất Word, thử lại sau 2 giây.", "warn");
   const { Document, Packer, Paragraph, Table, TableRow, TableCell, WidthType, ShadingType, TextRun } = window.docx;
   const makeRow = (c1, c2, fillHex = null) => new TableRow({
@@ -2864,7 +2966,7 @@ async function downloadColorWordTemplate(withEssay = false) {
   });
 
   const rows = [];
-  // 20 câu Trắc nghiệm 4 phương án (mẫu chuẩn)
+  // 20 câu Trắc nghiệm 4 phương án
   for (let q = 1; q <= 20; q++) {
     rows.push(makeRow("Câu " + q, "Nhập nội dung câu hỏi trắc nghiệm 4 phương án...", "CCFFCC"));
     rows.push(makeRow("A", "Phương án A"));
@@ -2873,7 +2975,7 @@ async function downloadColorWordTemplate(withEssay = false) {
     rows.push(makeRow("D", "Phương án D"));
     rows.push(makeRow("Đáp án", "A"));
   }
-  // 6 câu Đúng/Sai (mẫu chuẩn)
+  // 6 câu Đúng/Sai
   for (let q = 21; q <= 26; q++) {
     rows.push(makeRow("Câu " + q, "Nhập nội dung câu hỏi Đúng / Sai...", "FBE4D5"));
     rows.push(makeRow("a)", "Mệnh đề a"));
@@ -2882,27 +2984,30 @@ async function downloadColorWordTemplate(withEssay = false) {
     rows.push(makeRow("d)", "Mệnh đề d"));
     rows.push(makeRow("Đáp án", "Đ S Đ Đ"));
   }
-  // 10 câu Trả lời ngắn (mẫu chuẩn)
+  // 10 câu Trả lời ngắn
   for (let q = 27; q <= 36; q++) {
     rows.push(makeRow("Câu " + q, "Nhập nội dung câu hỏi trả lời ngắn...", "DEEAF6"));
     rows.push(makeRow("Đáp án", "0"));
   }
+  // 4 câu Tự luận (không tính điểm, phân từng câu để luyện đề & chữa bảng)
+  for (let t = 1; t <= 4; t++) {
+    rows.push(makeRow("Tự luận " + t, "Nhập nội dung câu hỏi tự luận số " + t + "...", "EAD1DC"));
+    rows.push(makeRow("Lời giải", "Hướng dẫn giải chi tiết câu tự luận " + t + "..."));
+  }
 
   const children = [
-    new Paragraph({ children: [new TextRun({ text: "ĐỀ KIỂM TRA ORIGIN MATH (20 TN • 6 Đ/S • 10 TLN)", bold: true })] }),
+    new Paragraph({ children: [new TextRun({ text: "ĐỀ ORIGIN MATH CHUẨN (20 TN • 6 Đ/S • 10 TLN • 4 TỰ LUẬN)", bold: true })] }),
     new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, rows })
   ];
-  if (withEssay) {
-    children.push(new Paragraph({ text: "" }), new Paragraph({ children: [new TextRun({ text: "PHẦN TỰ LUẬN", bold: true })] }), new Paragraph({ text: "Bài 1: ..." }));
-  }
   const doc = new Document({ sections: [{ children }] });
-  triggerDownload(await Packer.toBlob(doc), withEssay ? "OriginMath_Form_TuLuan.docx" : "OriginMath_Form_TracNghiem.docx");
+  triggerDownload(await Packer.toBlob(doc), "OriginMath_MauDe_Chuan_TN_TL.docx");
 }
 
 function toggleStudioWhitelistBox() {
   const show = document.getElementById("st-access-mode").value === "whitelist";
   document.getElementById("st-whitelist-box").style.display = show ? "block" : "none";
   if (show) renderStudentPicker("st-student-picker", []);
+    populateTargetClassDropdown();
 }
 
 async function publishParsedExam() {
@@ -2920,6 +3025,7 @@ async function publishParsedExam() {
     grade: document.getElementById("st-grade").value,
     accessMode: document.getElementById("st-access-mode").value,
     allowedStudents: whitelistRaw,
+    targetClass: document.getElementById("st-target-class")?.value || "ALL",
     duration: Number(document.getElementById("st-duration").value) || 60,
     maxViolations: Number(document.getElementById("st-maxviol").value) || 3,
     scoring: {
@@ -3045,24 +3151,81 @@ function getUserAvatar(uid) {
   return (state.usersMap[uid] && state.usersMap[uid].avatar) || getDefaultAvatar("Nam");
 }
 
+function adminDeleteSubmission(subId) {
+  if (!state.user || state.user.role !== "admin") return;
+  if (!confirm("Xóa bản ghi lịch sử làm bài này?")) return;
+  state.submissions = state.submissions.filter(s => s.id !== subId);
+  saveAndBroadcast("sub_delete");
+  if (isFirebaseLive && fbDb) fbDb.collection("submissions").doc(subId).delete().catch(() => {});
+  renderHistory();
+  showToast("Đã xóa lịch sử làm bài", "info");
+}
+
+function adminClearAllSubmissions() {
+  if (!state.user || state.user.role !== "admin") return;
+  if (!confirm("Xóa TOÀN BỘ lịch sử làm bài của tất cả học sinh?")) return;
+  state.submissions = [];
+  saveAndBroadcast("sub_clear_all");
+  renderHistory();
+  showToast("Đã xóa toàn bộ lịch sử làm bài", "info");
+}
+
+function adminClearExamLeaderboard() {
+  if (!state.user || state.user.role !== "admin") return;
+  const lbSelect = document.getElementById("lb-exam-filter");
+  const targetExam = lbSelect ? lbSelect.value : "ALL";
+  const msg = targetExam === "ALL"
+    ? "Xóa toàn bộ Bảng xếp hạng của TẤT CẢ kỳ khảo thí?"
+    : "Xóa Bảng xếp hạng của kỳ khảo thí đang chọn?";
+  if (!confirm(msg)) return;
+  if (targetExam === "ALL") {
+    state.submissions = state.submissions.filter(s => s.mode !== "exam");
+  } else {
+    state.submissions = state.submissions.filter(s => !(s.mode === "exam" && s.examId === targetExam));
+  }
+  saveAndBroadcast("lb_clear");
+  renderHistory();
+  showToast("Đã xóa dữ liệu Bảng xếp hạng", "info");
+}
+
 function renderHistory() {
+  const isAdmin = state.user && state.user.role === "admin";
   const curUid = state.user ? state.user.uid : "guest-local";
-  const mySubs = state.submissions.filter(s => s.uid === curUid);
+  const stuFilterEl = document.getElementById("hist-student-filter");
+  const selectedStuUid = stuFilterEl ? stuFilterEl.value : "ALL";
+
+  if (stuFilterEl && isAdmin) {
+    const stuOptions = Object.values(state.usersMap).filter(u => u.role === "student");
+    stuFilterEl.innerHTML = `<option value="ALL">Tất cả học sinh (${state.submissions.length})</option>` +
+      stuOptions.map(u => `<option value="${u.uid}" ${selectedStuUid === u.uid ? "selected" : ""}>${escapeHtml(u.name)} (@${escapeHtml(u.username)})</option>`).join("");
+  }
+
+  let visibleSubs = isAdmin
+    ? (selectedStuUid === "ALL" ? state.submissions : state.submissions.filter(s => s.uid === selectedStuUid))
+    : state.submissions.filter(s => s.uid === curUid);
+
   const histBody = document.getElementById("history-tbody");
   if (histBody) {
-    histBody.innerHTML = mySubs.length ? mySubs.map(s => `
+    histBody.innerHTML = visibleSubs.length ? visibleSubs.map(s => {
+      const stuName = state.usersMap[s.uid]?.name || s.studentName || "Học sinh";
+      return `
       <tr>
-        <td><strong>${escapeHtml(s.examTitle)}</strong><div class="muted">${new Date(s.submittedAt).toLocaleString("vi-VN")}</div></td>
+        <td>
+          <strong>${escapeHtml(s.examTitle)}</strong>
+          ${isAdmin ? `<div class="chip chip-primary" style="margin-top:3px;">${escapeHtml(stuName)}</div>` : ""}
+          <div class="muted">${new Date(s.submittedAt).toLocaleString("vi-VN")}</div>
+        </td>
         <td><span class="chip ${s.mode === 'exam' ? 'chip-primary' : 'chip-success'}">${s.mode === "exam" ? "Khảo thí" : "Luyện đề"}</span></td>
         <td><strong style="color:var(--primary);font-size:15px;">${s.score}</strong></td>
         <td>
           <div class="action-cell-group">
-            <button class="btn btn-ghost btn-xs" onclick="openSavedSubmission('${s.id}')"><i class="fa-regular fa-eye"></i> Xem lại</button>
-            ${s.mode === "practice" ? `<button class="btn btn-warning btn-xs" onclick="startPractice('${s.examId}')"><i class="fa-solid fa-wrench"></i> Sửa sai</button>` : ""}
+            <button class="btn btn-ghost btn-xs" onclick="openSavedSubmission('${s.id}')"><i class="fa-regular fa-eye"></i> Xem</button>
+            ${s.mode === "practice" && !isAdmin ? `<button class="btn btn-warning btn-xs" onclick="startPractice('${s.examId}')"><i class="fa-solid fa-wrench"></i> Sửa sai</button>` : ""}
+            ${isAdmin ? `<button class="btn btn-danger btn-xs" onclick="adminDeleteSubmission('${s.id}')" title="Xóa bản ghi"><i class="fa-solid fa-trash"></i></button>` : ""}
           </div>
         </td>
-      </tr>
-    `).join("") : `<tr><td colspan="4" class="muted">Chưa có lịch sử làm bài.</td></tr>`;
+      </tr>`;
+    }).join("") : `<tr><td colspan="4" class="muted">Chưa có lịch sử làm bài.</td></tr>`;
   }
 
   const examSubs = state.submissions.filter(s => s.mode === "exam");
@@ -3556,6 +3719,33 @@ function renderLaserOverlay(curPos = null, eraserCircle = null) {
   }
 }
 
+
+function drawLaserSegment(ctx, x1, y1, x2, y2) {
+  if (!ctx) return;
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  // Lớp hào quang đỏ phát sáng nổi bật trên bảng
+  ctx.strokeStyle = "rgba(239, 68, 68, 0.85)";
+  ctx.shadowColor = "#ff1e42";
+  ctx.shadowBlur = 14;
+  ctx.lineWidth = 7;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+
+  // Lõi laser sáng sắc nét ở giữa
+  ctx.shadowBlur = 3;
+  ctx.strokeStyle = "#fff1f2";
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.lineTo(x2, y2);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function clearLaserLayer() {
   wbState.laserStrokes = [];
   wbState.laserActive = false;
@@ -3698,7 +3888,7 @@ function initTeacherWhiteboardOnce() {
       wbState.drawing = true;
       wbState.laserActive = true;
       wbState.laserStrokes.push([p]);
-      renderLaserOverlay(p);
+      drawLaserSegment(wbState.laserCtx, p.x, p.y, p.x + 0.1, p.y + 0.1);
       return;
     }
 
@@ -4158,7 +4348,102 @@ function pickShapeOrText(kind) {
   }
 }
 
+
+const APP_BUILD_VERSION = "v15.0.0";
+
+function sanitizeAndMigrateLocalData() {
+  try {
+    const prevVer = localStorage.getItem("om_app_build_ver");
+    const rawMap = JSON.parse(localStorage.getItem("om_v8_users_map") || "{}");
+    const cleanMap = {};
+    for (const [k, u] of Object.entries(rawMap)) {
+      if (!u || typeof u !== "object") continue;
+      if (u.uid === "admin-root" || k === "admin-root") {
+        cleanMap["admin-root"] = { ...u, uid: "admin-root", role: "admin" };
+        continue;
+      }
+      // Chỉ giữ lại tài khoản hợp lệ có username chuẩn và không phải tài khoản test rác bị hỏng
+      if (u.username && USERNAME_REGEX.test(String(u.username).toLowerCase())) {
+        const uname = String(u.username).toLowerCase();
+        cleanMap[u.uid || k] = {
+          ...u,
+          uid: u.uid || k,
+          username: uname,
+          grantedTracks: Array.isArray(u.grantedTracks) ? u.grantedTracks : []
+        };
+      }
+    }
+    state.usersMap = cleanMap;
+    localStorage.setItem("om_v8_users_map", JSON.stringify(cleanMap));
+
+    // Bảo toàn giá trị blur = 0px chính xác
+    const savedPrefs = JSON.parse(localStorage.getItem("om_v8_prefs") || "{}");
+    if (savedPrefs.blur !== undefined && savedPrefs.blur !== null) {
+      state.prefs.blur = Number(savedPrefs.blur);
+    }
+
+    if (prevVer !== APP_BUILD_VERSION) {
+      localStorage.setItem("om_app_build_ver", APP_BUILD_VERSION);
+      saveAndBroadcast("version_upgrade");
+    }
+  } catch (e) {
+    console.warn("Migration check:", e);
+  }
+}
+
+async function adminFullSystemReset() {
+  if (!state.user || state.user.role !== "admin") return;
+  if (!confirm("XÁC NHẬN RESET TOÀN BỘ WEB 100%?\nTất cả tài khoản học sinh, giáo viên, đề thi, lớp học, lịch sử thi và bộ nhớ đệm sẽ bị xóa sạch để bắt đầu lại từ đầu!")) return;
+
+  const adminKeep = {
+    uid: "admin-root",
+    name: "Quản trị viên",
+    username: state.user.username || "admin",
+    grade: "",
+    gender: "Nam",
+    dob: "",
+    role: "admin",
+    grantedTracks: ["10", "11", "12", "THPTQG", "HSG"],
+    avatar: getDefaultAvatar("Nam")
+  };
+
+  if (isFirebaseLive && fbDb) {
+    const cols = ["users", "exams", "submissions", "participants", "handwrittenSolutions", "systemState"];
+    for (const c of cols) {
+      try {
+        const snap = await fbDb.collection(c).get();
+        const batch = fbDb.batch();
+        snap.docs.forEach(d => batch.delete(d.ref));
+        await batch.commit();
+      } catch (_) {}
+    }
+  }
+
+  Object.keys(localStorage).forEach(k => {
+    if (k.startsWith("om_")) localStorage.removeItem(k);
+  });
+  sessionStorage.clear();
+
+  state.usersMap = { "admin-root": adminKeep };
+  state.user = adminKeep;
+  state.sets = [];
+  state.submissions = [];
+  state.participants = [];
+  state.handwrittenSolutions = {};
+  state.classesMap = { "10": [], "11": [], "12": [], "THPTQG": [], "HSG": [] };
+  state.prefs = { ...DEFAULT_PREFS };
+  localStorage.setItem("om_app_build_ver", APP_BUILD_VERSION);
+
+  saveAndBroadcast("full_reset");
+  applyPreferences();
+  renderUserUI();
+  refreshAllViews();
+  switchView("dashboard");
+  showToast("Đã RESET toàn bộ hệ thống về trạng thái ban đầu 100%!", "success");
+}
+
 window.addEventListener("DOMContentLoaded", () => {
+  sanitizeAndMigrateLocalData();
   applyPreferences();
   renderUserUI();
   refreshAllViews();
