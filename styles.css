@@ -1071,3 +1071,55 @@ input:checked + .slider:before { transform: translateX(17px); }
   .om-full-footer { padding: 14px 14px; }
   .om-full-footer-inner { flex-direction: column; align-items: flex-start; gap: 6px; }
 }
+
+/* FOOTER ĐẦY ĐỦ NỘI DUNG & TRẢI TRỌN CHIỀU NGANG */
+.om-footer-left-block {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.om-footer-left-block .om-footer-brand {
+  font-size: 20px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+}
+.om-footer-left-block .om-footer-tagline {
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #ffffff;
+}
+.om-footer-left-block .om-footer-motto {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 1.8px;
+  color: #94a3b8;
+}
+.om-footer-left-block .om-footer-desc {
+  font-size: 12.5px;
+  color: #cbd5e1;
+  margin-top: 2px;
+}
+
+/* CHỐNG TRÀN TUYỆT ĐỐI TRÊN ĐIỆN THOẠI Ở LỊCH SỬ LÀM BÀI & BXH */
+@media (max-width: 768px) {
+  .history-responsive-grid {
+    grid-template-columns: 1fr !important;
+    width: 100%;
+  }
+  .history-responsive-grid > section {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+  .history-responsive-grid .table-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .lb-item {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+  }
+}
